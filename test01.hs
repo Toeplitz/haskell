@@ -7,6 +7,10 @@ import Data.List
 -- Idea:
 -- Write a SEGY haskell module
 
+
+evenSumFold' :: Integral a => [a] -> a
+evenSumFold' = foldl' (+) 0 . (filter even)
+
 evenSumFold :: Integral a => [a] -> a
 evenSumFold l = foldl' mysum 0 (filter even l)
   where mysum acc value = acc + value
@@ -49,6 +53,7 @@ main = do
   print $ evenSum []
   print $ evenSum' list
   print $ evenSumFold list
+  print $ evenSumFold' list
   putStrLn "---- Testing foldl"
   print $ foldl martin 0 list
   print $ foldl (+) 0 list
