@@ -17,7 +17,6 @@ import qualified Data.ByteString.Lazy as BL
 -- test01.segy
 -- test02.segy
 --
---
 
 -- Requirements:
 -- print text header
