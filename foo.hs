@@ -5,9 +5,21 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import Data.Binary.Get
 import Control.Monad
+import Control.Applicative
 import Codec.Text.IConv
 import qualified Data.ByteString.Lazy.Char8 as BC
 import Data.Word
+
+
+-- Questions:
+-- Is it not "nice" to create this as a SEGY monad?
+--
+-- getTextHeader :: SEGY [String]
+-- getTextHeader = do
+--   blah blah, return as a list of strings?
+--
+-- I have added FIXME in the code where I have specific issues.
+--
 
 -- Requirements:
 -- print text header
@@ -20,27 +32,58 @@ import Data.Word
 
 getTextHeaderLine,getTextFileHeader,getTraceHeader :: Get BL.ByteString
 getTextHeaderLine = getLazyByteString 80
-
 getTextFileHeader = getLazyByteString 3200
 getTraceHeader = getLazyByteString 240
 
 getTextHeader :: Get [BL.ByteString]
 getTextHeader = replicateM 40 getTextHeaderLine
 
-data Output = Output [BL.ByteString] Word16
 
-getBinHeader :: Get Word16
+data BinaryHeader = BinaryHeader { numTraces :: Int -- Bytes 3213 - 3214
+                 , numAuxTraces :: Int -- Bytes 3215 - 3216
+                 , sampleInterval :: Float -- Bytes: 3217 - 3218
+                 , numSamples :: Int -- Bytes: 3221 - 3222
+                 , sampleFormat :: Int -- Bytes: 3225 - 3226
+} deriving(Show)
+
+
+data Output = Output [BL.ByteString] BinaryHeader 
+
+
+getBinHeader :: Get BinaryHeader
 getBinHeader = do
-    begining <- getLazyByteString 16
+-- FIXME: 
+-- Should be a better way to do this avoiding the "mid" bind..
+--
+-- Also it is very repetative, maybe if I have all the variables in the
+-- BinaryHeader structure it could be a oneliner?
+--
+    begining <- getLazyByteString 12
+    numTraces <- getWord16be
+    numAuxTraces <- getWord16be
     sampleInterval <- getWord16be
-    rest <- getLazyByteString 382
-    return sampleInterval
+    mid <- getLazyByteString 2
+    numSamples <- getWord16be
+    mid <- getLazyByteString 2
+    sampleFormat <- getWord16be
+    rest <- getLazyByteString (400 - 26)
 
-getSEG :: Get Output  
-getSEG = do
+-- FIXME:
+-- I am converting from Word16 to a number in a very primitive way here,
+-- should be a better way?
+    return $ BinaryHeader (fromIntegral numTraces) (fromIntegral numAuxTraces) (fromIntegral sampleInterval / 1000) (fromIntegral numSamples) (fromIntegral sampleFormat)
+
+getSEGY :: Get Output  
+getSEGY = do
     header <- getTextHeader
-    sampleI <- getBinHeader
-    
+    bheader <- getBinHeader
+
+-- FIXME
+-- use numTraces :: BinaryHeader ..
+-- Extract trace headers in a loop
+--
+
+
     -- somehow extract numTraces
     -- forM [1..numTraces] getTrace
     --     getTrace will get both the header and data
@@ -52,15 +95,19 @@ getSEG = do
     --           forM [1..numberOfDataPoints] getDataPoint
     --     getDataPoint = do
      --          getFloat or getVector, etc.
-     -- you get the idea. You create a hierarchy to get every piece of data you need.    
     
-    return $ Output header sampleI
+    return $ Output header bheader
 
 main :: IO()
 main = do
-    con <- BL.readFile "test02.segy"
-    let contents = convert "IBM1047" "UTF8" con
+    orig <- BL.readFile "test01.segy"
 
-    let Output h bh = runGet getSEG contents   
+    -- FIXME:
+    --This "feels" like a non-haskell way of doing it by two let statements in
+    -- a row??
+    let ebcdic = convert "IBM1047" "UTF8" (BL.take 3200 orig)
+    let content = BL.append ebcdic (BL.drop 3200 orig)
+
+    let Output h bh = runGet getSEGY content
     BC.putStr $ BC.unlines h
-    putStrLn $ show bh
+    putStrLn $ show (bh)
