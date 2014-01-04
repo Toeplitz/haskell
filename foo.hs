@@ -46,21 +46,25 @@ getTextHeader = replicateM 40 getTextHeaderLine
 getWord16toIntegral :: Get Int
 getWord16toIntegral = getWord16be >>= return . fromIntegral -- Inject Num into the Get monadic type
 
+                            
+infixl 5 *>>
+(*>>) :: Applicative f => f a -> f b -> f b
+(*>>) = (*>)
+
 getBinHeader :: Get BinaryHeader
-getBinHeader = BinaryHeader <$> (skip 12 
-                             *> getWord16toIntegral)                               -- numTraces
+getBinHeader = BinaryHeader <$> skip 12 
+                            *>> getWord16toIntegral                                -- numTraces
                             <*> getWord16toIntegral                                -- numAuxTraces
                             <*> getWord16toIntegral                                -- sampleInterval
-                            <*> (skip 2
-                             *> getWord16toIntegral)                               -- numSamples
-                            <*> (skip 2
-                             *> getWord16toIntegral)                               -- sampleFormat
+                            <*> skip 2
+                            *>> getWord16toIntegral                                -- numSamples
+                            <*> skip 2
+                            *>> getWord16toIntegral                                -- sampleFormat
                             <*  skip (400-26)
-                            
  --or to have truly one line:
 --w2Int = getWord16toIntegral
 --w2Intdiv1000 = getWord16be >>= return . (/1000) . fromIntegral
---getBinHeader3 = BinaryHeader <$> (skip 12 *> w2Int) <*> w2Int <*> w2Intdiv1000 <*> (skip 12 *> w2Int) <*> (skip 2 *> w2Int) <* skip (400-26)
+--getBinHeader3 = BinaryHeader <$> skip 12 *>> w2Int <*> w2Int <*> w2Intdiv1000 <*> skip 12 *>> w2Int <*> skip 2 *>> w2Int <* skip (400-26)
 
 -- EXERCISE :   convert this to applicative style                      <---------------------------
 getTraceHeader :: Get TraceHeader
@@ -78,7 +82,7 @@ getSEGY = do
 
     let nTraces = numTraces bheader
     let x = [1..nTraces]
-    forM getTraceHeader x
+    --forM getTraceHeader x
 
 -- FIXME
 -- use numTraces :: BinaryHeader ..
@@ -107,15 +111,7 @@ main :: IO()
 main = do
     orig <- BL.readFile "test01.segy"
 
-    -- FIXME:
-    --This "feels" like a non-haskell way of doing it by two let statements in
-    -- a row??
-    
-    -- I placed the conversion into the getTextHeaderLine function         <------------------------
---    let ebcdic = convert "IBM1047" "UTF8" (BL.take 3200 orig)            <------------------------
-  --  let content = BL.append ebcdic (BL.drop 3200 orig)                  <------------------------
-
-    let Output h bh theaders = runGet getSEGY orig             --        <------------------------
+    let Output h bh theaders = runGet getSEGY orig 
     BC.putStr $ BC.unlines h
     putStrLn $ show (bh)
     putStrLn $ show (theaders)
