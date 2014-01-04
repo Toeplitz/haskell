@@ -20,16 +20,10 @@ import Data.Word
 -- I have added FIXME in the code where I have specific issues.
 --
 
--- Requirements:
--- print text header
--- print binary header values
--- print trace numbers f
--- print trace sample values by trace number
-
 -- Values from 400 Byte binary header
 data BinaryHeader = BinaryHeader { numTraces :: Int -- Bytes 3213 - 3214
                  , numAuxTraces :: Int -- Bytes 3215 - 3216
-                 , sampleInterval :: Float -- Bytes: 3217 - 3218
+                 , sampleInterval :: Int -- Bytes: 3217 - 3218
                  , numSamples :: Int -- Bytes: 3221 - 3222
                  , sampleFormat :: Int -- Bytes: 3225 - 3226
 } deriving(Show)
@@ -39,7 +33,7 @@ data TraceHeader = TraceHeader { traceNum :: Int -- Bytes 1 - 4
                  , traceNumSegy :: Int -- Byte 5 - 8
 } deriving(Show)
 
-data Output = Output [BL.ByteString] BinaryHeader [TraceHeader]
+data Output = Output [BL.ByteString] BinaryHeader [Int]
 
 
 getTextHeaderLine,getTextFileHeader :: Get BL.ByteString
@@ -48,47 +42,25 @@ getTextFileHeader = getLazyByteString 3200
 
 getTextHeader :: Get [BL.ByteString]
 getTextHeader = replicateM 40 getTextHeaderLine
+
+getWord16toIntegral :: Get Int
+getWord16toIntegral = getWord16be >>= return . fromIntegral -- Inject Num into the Get monadic type
+
 getBinHeader :: Get BinaryHeader
-getBinHeader = do
--- FIXME: 
--- Should be a better way to do this avoiding the "mid" bind..
---
--- Also it is very repetative, maybe if I have all the variables in the
--- BinaryHeader structure it could be a oneliner?
---
-    begining <- getLazyByteString 12
-    numTraces <- getWord16be
-    numAuxTraces <- getWord16be
-    sampleInterval <- getWord16be
-    mid <- getLazyByteString 2
-    numSamples <- getWord16be
-    mid <- getLazyByteString 2
-    sampleFormat <- getWord16be
-    rest <- getLazyByteString (400 - 26)
--- FIXME:
--- I am converting from Word16 to a number in a very primitive way here,
--- should be a better way?              <------------------------   look below
-
-    return $ BinaryHeader (fromIntegral numTraces) (fromIntegral numAuxTraces) 
-                          (fromIntegral sampleInterval / 1000) (fromIntegral numSamples) 
-                          (fromIntegral sampleFormat)
-                          
-
-getWord16toIntegral = getWord16be >>= return . fromIntegral           --   <------------------------
-
-getBinHeader2 = BinaryHeader <$> (skip 12 
-                              *> getWord16toIntegral)                                -- numTraces
-                             <*> getWord16toIntegral                                -- numAuxTraces
-                             <*> (getWord16be >>= return . (/1000) . fromIntegral)  -- sampleInterval
-                             <*> (skip 12 
-                              *> getWord16toIntegral)                                -- numSamples
-                             <*> (skip 2
-                              *> getWord16toIntegral)                                -- sampleFormat
-                             <*  skip (400-26)
+getBinHeader = BinaryHeader <$> (skip 12 
+                             *> getWord16toIntegral)                               -- numTraces
+                            <*> getWord16toIntegral                                -- numAuxTraces
+                            <*> getWord16toIntegral                                -- sampleInterval
+                            <*> (skip 2
+                             *> getWord16toIntegral)                               -- numSamples
+                            <*> (skip 2
+                             *> getWord16toIntegral)                               -- sampleFormat
+                            <*  skip (400-26)
+                            
  --or to have truly one line:
-w2Int = getWord16toIntegral
-w2Intdiv1000 = getWord16be >>= return . (/1000) . fromIntegral
-getBinHeader3 = BinaryHeader <$> (skip 12 *> w2Int) <*> w2Int <*> w2Intdiv1000 <*> (skip 12 *> w2Int) <*> (skip 2 *> w2Int) <* skip (400-26)
+--w2Int = getWord16toIntegral
+--w2Intdiv1000 = getWord16be >>= return . (/1000) . fromIntegral
+--getBinHeader3 = BinaryHeader <$> (skip 12 *> w2Int) <*> w2Int <*> w2Intdiv1000 <*> (skip 12 *> w2Int) <*> (skip 2 *> w2Int) <* skip (400-26)
 
 -- EXERCISE :   convert this to applicative style                      <---------------------------
 getTraceHeader :: Get TraceHeader
@@ -104,7 +76,10 @@ getSEGY = do
     header <- getTextHeader
     bheader <- getBinHeader
 
-    let nTraces = numTraces bheader        --  <------------------------------
+    let nTraces = numTraces bheader
+    let x = [1..nTraces]
+    forM getTraceHeader x
+
 -- FIXME
 -- use numTraces :: BinaryHeader ..
 -- How to access it??
@@ -126,7 +101,7 @@ getSEGY = do
     --     getDataPoint = do
      --          getFloat or getVector, etc.
     
-    return $ Output header bheader []
+    return $ Output header bheader x
 
 main :: IO()
 main = do
@@ -143,3 +118,4 @@ main = do
     let Output h bh theaders = runGet getSEGY orig             --        <------------------------
     BC.putStr $ BC.unlines h
     putStrLn $ show (bh)
+    putStrLn $ show (theaders)
