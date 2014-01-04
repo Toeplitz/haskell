@@ -27,18 +27,10 @@ import Data.Word
 -- print trace numbers f
 -- print trace sample values by trace number
 --
--- Make use of Binary.Get monad?
--- http://hackage.haskell.org/package/binary-0.7.1.0/docs/Data-Binary-Get.html
-
-getTextHeaderLine,getTextFileHeader,getTraceHeader :: Get BL.ByteString
-getTextHeaderLine = getLazyByteString 80
-getTextFileHeader = getLazyByteString 3200
-getTraceHeader = getLazyByteString 240
-
-getTextHeader :: Get [BL.ByteString]
-getTextHeader = replicateM 40 getTextHeaderLine
 
 
+
+-- Values from 400 Byte binary header
 data BinaryHeader = BinaryHeader { numTraces :: Int -- Bytes 3213 - 3214
                  , numAuxTraces :: Int -- Bytes 3215 - 3216
                  , sampleInterval :: Float -- Bytes: 3217 - 3218
@@ -46,10 +38,20 @@ data BinaryHeader = BinaryHeader { numTraces :: Int -- Bytes 3213 - 3214
                  , sampleFormat :: Int -- Bytes: 3225 - 3226
 } deriving(Show)
 
+-- Values from 240 Byte trace header
+data TraceHeader = TraceHeader { traceNum :: Int -- Bytes 1 - 4
+                 , traceNumSegy :: Int -- Byte 5 - 8
+} deriving(Show)
 
-data Output = Output [BL.ByteString] BinaryHeader 
+data Output = Output [BL.ByteString] BinaryHeader [TraceHeader]
 
 
+getTextHeaderLine,getTextFileHeader :: Get BL.ByteString
+getTextHeaderLine = getLazyByteString 80
+getTextFileHeader = getLazyByteString 3200
+
+getTextHeader :: Get [BL.ByteString]
+getTextHeader = replicateM 40 getTextHeaderLine
 getBinHeader :: Get BinaryHeader
 getBinHeader = do
 -- FIXME: 
@@ -73,6 +75,14 @@ getBinHeader = do
 -- should be a better way?
     return $ BinaryHeader (fromIntegral numTraces) (fromIntegral numAuxTraces) (fromIntegral sampleInterval / 1000) (fromIntegral numSamples) (fromIntegral sampleFormat)
 
+getTraceHeader :: Get TraceHeader
+getTraceHeader = do
+    traceNum <- getWord32be
+    traceNumSegy <- getWord32be
+    rest <- getLazyByteString (240 - 8)
+    return $ TraceHeader (fromIntegral traceNum) (fromIntegral traceNumSegy)
+
+
 getSEGY :: Get Output  
 getSEGY = do
     header <- getTextHeader
@@ -80,8 +90,11 @@ getSEGY = do
 
 -- FIXME
 -- use numTraces :: BinaryHeader ..
--- Extract trace headers in a loop
---
+-- How to access it??
+   --let l = [1..numTraces :: bheader]
+  --  concatMap getTraceHeader [1..numTraces]
+    --forM [1..numTraces] getTraceHeader
+    -- FIXME: Create a list of TraceHeader data types
 
 
     -- somehow extract numTraces
@@ -96,7 +109,7 @@ getSEGY = do
     --     getDataPoint = do
      --          getFloat or getVector, etc.
     
-    return $ Output header bheader
+    return $ Output header bheader []
 
 main :: IO()
 main = do
@@ -108,6 +121,6 @@ main = do
     let ebcdic = convert "IBM1047" "UTF8" (BL.take 3200 orig)
     let content = BL.append ebcdic (BL.drop 3200 orig)
 
-    let Output h bh = runGet getSEGY content
+    let Output h bh theaders = runGet getSEGY content
     BC.putStr $ BC.unlines h
     putStrLn $ show (bh)
