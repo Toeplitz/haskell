@@ -76,19 +76,19 @@ getBinHeader = do
 
 getWord16toIntegral = getWord16be >>= return . fromIntegral           --   <------------------------
 
-getBinHeader2 = BinaryHeader <$> skip 12 
-                              *> getWord16toIntegral                                -- numTraces
+getBinHeader2 = BinaryHeader <$> (skip 12 
+                              *> getWord16toIntegral)                                -- numTraces
                              <*> getWord16toIntegral                                -- numAuxTraces
                              <*> (getWord16be >>= return . (/1000) . fromIntegral)  -- sampleInterval
-                             <*> skip 12 
-                              *> getWord16toIntegral                                -- numSamples
-                             <*> skip 2
-                              *> getWord16toIntegral                                -- sampleFormat
+                             <*> (skip 12 
+                              *> getWord16toIntegral)                                -- numSamples
+                             <*> (skip 2
+                              *> getWord16toIntegral)                                -- sampleFormat
                              <*  skip (400-26)
  --or to have truly one line:
 w2Int = getWord16toIntegral
 w2Intdiv1000 = getWord16be >>= return . (/1000) . fromIntegral
-getBinHeader3 = BinaryHeader <$> skip 12 *> w2Int <*> w2Int <*> w2Intdiv1000 <*> skip 12 *> w2Int <*> skip 2 *> w2Int <* skip (400-26)
+getBinHeader3 = BinaryHeader <$> (skip 12 *> w2Int) <*> w2Int <*> w2Intdiv1000 <*> (skip 12 *> w2Int) <*> (skip 2 *> w2Int) <* skip (400-26)
 
 -- EXERCISE :   convert this to applicative style                      <---------------------------
 getTraceHeader :: Get TraceHeader
