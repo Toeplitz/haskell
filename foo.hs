@@ -10,7 +10,6 @@ import Codec.Text.IConv
 import qualified Data.ByteString.Lazy.Char8 as BC
 import Data.Word
 
-
 -- Questions:
 -- Is it not "nice" to create this as a SEGY monad?
 --
@@ -26,9 +25,6 @@ import Data.Word
 -- print binary header values
 -- print trace numbers f
 -- print trace sample values by trace number
---
-
-
 
 -- Values from 400 Byte binary header
 data BinaryHeader = BinaryHeader { numTraces :: Int -- Bytes 3213 - 3214
@@ -47,7 +43,7 @@ data Output = Output [BL.ByteString] BinaryHeader [TraceHeader]
 
 
 getTextHeaderLine,getTextFileHeader :: Get BL.ByteString
-getTextHeaderLine = getLazyByteString 80
+getTextHeaderLine = convert "IBM1047" "UTF8" <$> getLazyByteString 80
 getTextFileHeader = getLazyByteString 3200
 
 getTextHeader :: Get [BL.ByteString]
@@ -69,12 +65,32 @@ getBinHeader = do
     mid <- getLazyByteString 2
     sampleFormat <- getWord16be
     rest <- getLazyByteString (400 - 26)
-
 -- FIXME:
 -- I am converting from Word16 to a number in a very primitive way here,
--- should be a better way?
-    return $ BinaryHeader (fromIntegral numTraces) (fromIntegral numAuxTraces) (fromIntegral sampleInterval / 1000) (fromIntegral numSamples) (fromIntegral sampleFormat)
+-- should be a better way?              <------------------------   look below
 
+    return $ BinaryHeader (fromIntegral numTraces) (fromIntegral numAuxTraces) 
+                          (fromIntegral sampleInterval / 1000) (fromIntegral numSamples) 
+                          (fromIntegral sampleFormat)
+                          
+
+getWord16toIntegral = getWord16be >>= return . fromIntegral           --   <------------------------
+
+getBinHeader2 = BinaryHeader <$> skip 12 
+                              *> getWord16toIntegral                                -- numTraces
+                             <*> getWord16toIntegral                                -- numAuxTraces
+                             <*> (getWord16be >>= return . (/1000) . fromIntegral)  -- sampleInterval
+                             <*> skip 12 
+                              *> getWord16toIntegral                                -- numSamples
+                             <*> skip 2
+                              *> getWord16toIntegral                                -- sampleFormat
+                             <*  skip (400-26)
+ --or to have truly one line:
+w2Int = getWord16toIntegral
+w2Intdiv1000 = getWord16be >>= return . (/1000) . fromIntegral
+getBinHeader3 = BinaryHeader <$> skip 12 *> w2Int <*> w2Int <*> w2Intdiv1000 <*> skip 12 *> w2Int <*> skip 2 *> w2Int <* skip (400-26)
+
+-- EXERCISE :   convert this to applicative style                      <---------------------------
 getTraceHeader :: Get TraceHeader
 getTraceHeader = do
     traceNum <- getWord32be
@@ -88,6 +104,7 @@ getSEGY = do
     header <- getTextHeader
     bheader <- getBinHeader
 
+    let nTraces = numTraces bheader        --  <------------------------------
 -- FIXME
 -- use numTraces :: BinaryHeader ..
 -- How to access it??
@@ -118,9 +135,11 @@ main = do
     -- FIXME:
     --This "feels" like a non-haskell way of doing it by two let statements in
     -- a row??
-    let ebcdic = convert "IBM1047" "UTF8" (BL.take 3200 orig)
-    let content = BL.append ebcdic (BL.drop 3200 orig)
+    
+    -- I placed the conversion into the getTextHeaderLine function         <------------------------
+--    let ebcdic = convert "IBM1047" "UTF8" (BL.take 3200 orig)            <------------------------
+  --  let content = BL.append ebcdic (BL.drop 3200 orig)                  <------------------------
 
-    let Output h bh theaders = runGet getSEGY content
+    let Output h bh theaders = runGet getSEGY orig             --        <------------------------
     BC.putStr $ BC.unlines h
     putStrLn $ show (bh)
