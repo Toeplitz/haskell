@@ -87,7 +87,7 @@ getTraceHeader = TraceHeader <$> getWord32toIntegral -- traceNum
 getTraceData :: Int -> Get [Float]
 getTraceData numSamples = do
     -- FIXME: how do I create the float list (or tuple?) here?
-    let foo = skip (4 * numSamples1)
+    let foo = skip (4 * numSamples)
     return $ [0.1, 0.1]
 
 -- FIXME: to I really need the Get monad in this function I am not doing
