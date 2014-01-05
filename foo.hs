@@ -3,6 +3,7 @@
 import qualified Data.Text.ICU.Convert as C
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
+import Data.Bits
 import Data.Binary.Get
 import Control.Monad
 import Control.Applicative
@@ -37,7 +38,7 @@ data TraceHeader = TraceHeader { traceNum :: Int -- Bytes 1 - 4
 } deriving(Show)
 
 data Trace = Trace { traceHeader :: TraceHeader
-           , dataPoints :: [Float]
+           , dataPoints :: [Word32]
 } deriving(Show)
 
 
@@ -84,11 +85,26 @@ getTraceHeader = TraceHeader <$> getWord32toIntegral -- traceNum
                              <* skip (240 - 26)
 
 
-getTraceData :: Int -> Get [Float]
+-- Based on this python implementation:
+-- http://stackoverflow.com/questions/7125890/python-unpack-ibm-32-bit-float-point
+--
+ibm2ieee :: Word32 -> Float
+ibm2ieee ibm  = do
+    let sign = (ibm `shiftL` 31) .&. 0x01
+    let exponent = (ibm `shiftL` 24) .&. 0x7f
+    --let mantissa = (ibm .&. 0x00ffffff) / 1
+    --let sign = ibm `shiftL` 31 & 0x01
+    0.1
+
+
+getData :: Get Word32
+getData = getWord32be
+
+getTraceData :: Int -> Get [Word32]
 getTraceData numSamples = do
-    -- FIXME: how do I create the float list (or tuple?) here?
-    let foo = skip (4 * numSamples)
-    return $ [0.1, 0.1]
+    val <- forM [1 .. 4] $ \func -> do
+      getWord32be
+    return $ val
 
 -- FIXME: to I really need the Get monad in this function I am not doing
 -- any reading in this function itself..
@@ -106,7 +122,8 @@ getSEGY = do
 
     -- FIXME: Can I run mapM instead or forM without using a lambda function?
     -- trace <- forM [1 .. numTraces bheader] getTrace does not work
-    trace <- forM [1 .. numTraces bheader] $ \func -> do
+    --trace <- forM [1 .. numTraces bheader] $ \func -> do
+    trace <- forM [1 .. 3] $ \func -> do
       getTrace bheader
 
       
@@ -127,9 +144,12 @@ getSEGY = do
 
 main :: IO()
 main = do
-    orig <- BL.readFile "test01.segy"
+    --orig <- BL.readFile "WD_3D.sgy"
+    orig <- BL.readFile "Avenue.sgy"
+    --orig <- BL.readFile "test02.segy"
 
     let Output h bh theaders = runGet getSEGY orig 
     BC.putStr $ BC.unlines h
     putStrLn $ Pr.ppShow (bh)
-    putStrLn $ Pr.ppShow (take 3 theaders)
+    putStrLn . Pr.ppShow $ map traceHeader (take 3 theaders)
+    putStrLn . Pr.ppShow $ map dataPoints (take 3 theaders)
