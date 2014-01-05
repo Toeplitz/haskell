@@ -9,7 +9,8 @@ import Control.Applicative
 import Codec.Text.IConv
 import qualified Data.ByteString.Lazy.Char8 as BC
 import Data.Word
-
+import qualified Text.Show.Pretty as Pr
+ 
 -- Questions:
 -- Is it not "nice" to create this as a SEGY monad?
 --
@@ -28,51 +29,75 @@ data BinaryHeader = BinaryHeader { numTraces :: Int -- Bytes 3213 - 3214
                  , sampleFormat :: Int -- Bytes: 3225 - 3226
 } deriving(Show)
 
+
 -- Values from 240 Byte trace header
 data TraceHeader = TraceHeader { traceNum :: Int -- Bytes 1 - 4
                  , traceNumSegy :: Int -- Byte 5 - 8
+                 , traceIdCode :: Int -- Byte 29 - 30
 } deriving(Show)
 
-data Output = Output [BL.ByteString] BinaryHeader [Int]
+data Trace = Trace { traceHeader :: TraceHeader
+           , dataPoints :: [Float]
+} deriving(Show)
+
+
+data Output = Output [BL.ByteString] BinaryHeader [Trace]
 
 
 getTextHeaderLine,getTextFileHeader :: Get BL.ByteString
 getTextHeaderLine = convert "IBM1047" "UTF8" <$> getLazyByteString 80
 getTextFileHeader = getLazyByteString 3200
 
+
 getTextHeader :: Get [BL.ByteString]
 getTextHeader = replicateM 40 getTextHeaderLine
 
+
 getWord16toIntegral :: Get Int
 getWord16toIntegral = getWord16be >>= return . fromIntegral -- Inject Num into the Get monadic type
+
+
+getWord32toIntegral :: Get Int
+getWord32toIntegral = getWord32be >>= return . fromIntegral -- Inject Num into the Get monadic type
+
 
 infixl 5 *>>
 (*>>) :: Applicative f => f a -> f b -> f b
 (*>>) = (*>)
 
+
 getBinHeader :: Get BinaryHeader
 getBinHeader = BinaryHeader <$> skip 12 
-                            *>> getWord16toIntegral                                -- numTraces
-                            <*> getWord16toIntegral                                -- numAuxTraces
-                            <*> getWord16toIntegral                                -- sampleInterval
+                            *>> getWord16toIntegral -- numTraces
+                            <*> getWord16toIntegral -- numAuxTraces
+                            <*> getWord16toIntegral -- sampleInterval
                             <*> skip 2
-                            *>> getWord16toIntegral                                -- numSamples
+                            *>> getWord16toIntegral -- numSamples
                             <*> skip 2
-                            *>> getWord16toIntegral                                -- sampleFormat
+                            *>> getWord16toIntegral -- sampleFormat
                             <*  skip (400-26)
 
---or to have truly one line:
---w2Int = getWord16toIntegral
---w2Intdiv1000 = getWord16be >>= return . (/1000) . fromIntegral
---getBinHeader3 = BinaryHeader <$> skip 12 *>> w2Int <*> w2Int <*> w2Intdiv1000 <*> skip 12 *>> w2Int <*> skip 2 *>> w2Int <* skip (400-26)
 
--- EXERCISE :   convert this to applicative style                      <---------------------------
 getTraceHeader :: Get TraceHeader
-getTraceHeader = do
-    traceNum <- getWord32be
-    traceNumSegy <- getWord32be
-    rest <- getLazyByteString (240 - 8)
-    return $ TraceHeader (fromIntegral traceNum) (fromIntegral traceNumSegy)
+getTraceHeader = TraceHeader <$> getWord32toIntegral -- traceNum
+                             <*> getWord32toIntegral -- traceNumSegy
+                             <*> skip 16
+                             *>> getWord16toIntegral -- traceIdCode
+                             <* skip (240 - 26)
+
+
+getTraceData :: Int -> Get [Float]
+getTraceData numSamples = do
+    -- FIXME: how do I create the float list (or tuple?) here?
+    let foo = skip (4 * numSamples)
+    return $ [0.1, 0.1]
+
+
+getTrace :: BinaryHeader -> Get Trace 
+getTrace bh = do
+      th <- getTraceHeader
+      x <- getTraceData $ numSamples bh
+      return $ Trace th x
 
 
 getSEGY :: Get Output  
@@ -80,14 +105,12 @@ getSEGY = do
     header <- getTextHeader
     bheader <- getBinHeader
 
-    let nTraces = numTraces bheader
-    let x = [1..nTraces]
-    forM x $ \foo -> do
-      traceHdr <- getTraceHeader
+    -- FIXME: Can I run mapM instead or forM without using a lambda function?
+    -- trace <- forM [1 .. numTraces bheader] getTrace does not work
+    trace <- forM [1 .. numTraces bheader] $ \func -> do
+      getTrace bheader
 
-
--- FIXME
-  --  concatMap getTraceHeader [1..numTraces]
+      
     --forM [1..numTraces] getTraceHeader
     -- FIXME: Create a list of TraceHeader data types
 
@@ -103,7 +126,7 @@ getSEGY = do
     --     getDataPoint = do
      --          getFloat or getVector, etc.
     
-    return $ Output header bheader x
+    return $ Output header bheader trace
 
 main :: IO()
 main = do
@@ -111,5 +134,5 @@ main = do
 
     let Output h bh theaders = runGet getSEGY orig 
     BC.putStr $ BC.unlines h
-    putStrLn $ show (bh)
-    putStrLn $ show (theaders)
+    putStrLn $ Pr.ppShow (bh)
+    putStrLn $ Pr.ppShow (take 3 theaders)
