@@ -52,11 +52,9 @@ getTextFileHeader = getLazyByteString 3200
 getTextHeader :: Get [BL.ByteString]
 getTextHeader = replicateM 40 getTextHeaderLine
 
-
+-- FIXME: "best" way to generalize these two funcitons?
 getWord16toIntegral :: Get Int
 getWord16toIntegral = getWord16be >>= return . fromIntegral -- Inject Num into the Get monadic type
-
-
 getWord32toIntegral :: Get Int
 getWord32toIntegral = getWord32be >>= return . fromIntegral -- Inject Num into the Get monadic type
 
@@ -89,10 +87,11 @@ getTraceHeader = TraceHeader <$> getWord32toIntegral -- traceNum
 getTraceData :: Int -> Get [Float]
 getTraceData numSamples = do
     -- FIXME: how do I create the float list (or tuple?) here?
-    let foo = skip (4 * numSamples)
+    let foo = skip (4 * numSamples1)
     return $ [0.1, 0.1]
 
-
+-- FIXME: to I really need the Get monad in this function I am not doing
+-- any reading in this function itself..
 getTrace :: BinaryHeader -> Get Trace 
 getTrace bh = do
       th <- getTraceHeader
@@ -112,8 +111,6 @@ getSEGY = do
 
       
     --forM [1..numTraces] getTraceHeader
-    -- FIXME: Create a list of TraceHeader data types
-
     -- somehow extract numTraces
     -- forM [1..numTraces] getTrace
     --     getTrace will get both the header and data
