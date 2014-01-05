@@ -46,7 +46,6 @@ getTextHeader = replicateM 40 getTextHeaderLine
 getWord16toIntegral :: Get Int
 getWord16toIntegral = getWord16be >>= return . fromIntegral -- Inject Num into the Get monadic type
 
-                            
 infixl 5 *>>
 (*>>) :: Applicative f => f a -> f b -> f b
 (*>>) = (*>)
@@ -61,7 +60,8 @@ getBinHeader = BinaryHeader <$> skip 12
                             <*> skip 2
                             *>> getWord16toIntegral                                -- sampleFormat
                             <*  skip (400-26)
- --or to have truly one line:
+
+--or to have truly one line:
 --w2Int = getWord16toIntegral
 --w2Intdiv1000 = getWord16be >>= return . (/1000) . fromIntegral
 --getBinHeader3 = BinaryHeader <$> skip 12 *>> w2Int <*> w2Int <*> w2Intdiv1000 <*> skip 12 *>> w2Int <*> skip 2 *>> w2Int <* skip (400-26)
@@ -82,16 +82,14 @@ getSEGY = do
 
     let nTraces = numTraces bheader
     let x = [1..nTraces]
-    --forM getTraceHeader x
+    forM x $ \foo -> do
+      traceHdr <- getTraceHeader
+
 
 -- FIXME
--- use numTraces :: BinaryHeader ..
--- How to access it??
-   --let l = [1..numTraces :: bheader]
   --  concatMap getTraceHeader [1..numTraces]
     --forM [1..numTraces] getTraceHeader
     -- FIXME: Create a list of TraceHeader data types
-
 
     -- somehow extract numTraces
     -- forM [1..numTraces] getTrace
