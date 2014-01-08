@@ -1,25 +1,41 @@
 import Data.List
 import qualified Data.ByteString.Lazy.Char8 as BL
-import qualified Data.Binary.Put as P
-import qualified Data.Binary.Get as G
+import Data.Binary
+import Data.Binary.Get
+import Data.Binary.Put
 import qualified Data.Binary.IEEE754 as I
 import Control.Monad
 
-putRawDoubles :: P.Put
-putRawDoubles = do
-    let xs = [0.1]
-    P.putWord64le $ genericLength xs
+
+putDoubles :: [Double] -> Put
+putDoubles xs = do
     mapM_ I.putFloat64le xs
 
-getRawDoubles :: G.Get Double
-getRawDoubles = I.getFloat64le
+
+getListOfDoubles :: Get [Double]
+getListOfDoubles = do
+    empty <- isEmpty
+    if empty
+      then return []
+      else do
+        v <- I.getFloat64le
+        rest <- getListOfDoubles
+        return (v:rest)
+
+
+getDouble :: Get Double
+getDouble = I.getFloat64le
+
 
 main :: IO ()
 main = do
+    let xs = [0.1, 0.2, pi]
     let file = "test.bin"
-    let p = P.runPut putRawDoubles 
+
+    let p = runPut $ putDoubles xs
     BL.writeFile file p
 
     content <- BL.readFile file
-    let g = G.runGet getRawDoubles content
-    print $ show g
+    let g = runGet getListOfDoubles content
+    print $ g
+    print $ length g
