@@ -12,15 +12,6 @@ import qualified Data.ByteString.Lazy.Char8 as BC
 import Data.Word
 import qualified Text.Show.Pretty as Pr
  
--- Questions:
--- Is it not "nice" to create this as a SEGY monad?
---
--- getTextHeader :: SEGY [String]
--- getTextHeader = do
---   blah blah, return as a list of strings?
---
--- I have added FIXME in the code where I have specific issues.
---
 
 -- Values from 400 Byte binary header
 data BinaryHeader = BinaryHeader { numTraces :: Int -- Bytes 3213 - 3214
@@ -53,7 +44,6 @@ getTextFileHeader = getLazyByteString 3200
 getTextHeader :: Get [BL.ByteString]
 getTextHeader = replicateM 40 getTextHeaderLine
 
--- FIXME: "best" way to generalize these two funcitons?
 getWord16toIntegral :: Get Int
 getWord16toIntegral = getWord16be >>= return . fromIntegral -- Inject Num into the Get monadic type
 getWord32toIntegral :: Get Int
@@ -106,8 +96,6 @@ getTraceData numSamples = do
       getWord32be
     return $ val
 
--- FIXME: to I really need the Get monad in this function I am not doing
--- any reading in this function itself..
 getTrace :: BinaryHeader -> Get Trace 
 getTrace bh = do
       th <- getTraceHeader
