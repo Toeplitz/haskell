@@ -133,7 +133,8 @@ getSEGY = do
 main :: IO()
 main = do
     --orig <- BL.readFile "WD_3D.sgy"
-    orig <- BL.readFile "Avenue.sgy"
+    orig <- BL.readFile "test_200x200x50_cube_ieee.segy"
+    --orig <- BL.readFile "Avenue.sgy"
     --orig <- BL.readFile "test02.segy"
 
     let Output h bh theaders = runGet getSEGY orig 
