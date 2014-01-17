@@ -1,19 +1,29 @@
 import Data.Maybe
 import Control.Applicative
+import Data.List.Split
 
 
-data Output = Output { owd :: Float
-                     , twt :: Float
-} deriving (Show)
+parseCheckShot :: String -> [String]
+parseCheckShot x = do
+    let xs = words x
+    [xs !! 2, xs !! 3, xs !! 5]
 
-parseCheckShot :: String -> (Float, Float)
-parseCheckShot x = (0.1, 0.2)
+getValues :: Int -> [String] -> String
+getValues n xs = xs !! n
 
-    
+
+readAbsFloat :: [String] -> [Float]
+readAbsFloat = map (abs . read)
+
 
 main :: IO()
 main = do
-    content <- readFile "well_24_9_1_checkshot_ascii.txt"
-    x <- parseCheckShot <$> (take 5 (lines content))
+    content <- readFile "well_checkshot_ascii.txt"
+    let xs = parseCheckShot <$> drop 17 (lines content)
+    let z = readAbsFloat $ (getValues 0) <$> xs
+    let twt = readAbsFloat $ (getValues 1) <$> xs
+    let well = (getValues 2) <$> xs
+    print z
+    print twt
+    print well
 
-    print $ length . lines $ content
