@@ -1,10 +1,12 @@
-{-# OPTIONS -fno-warn-unused-binds -fno-warn-unused-matches -fno-warn-unused-imports -fno-warn-type-defaults #-}
+{-# OPTIONS -XBangPatterns -fno-warn-unused-binds -fno-warn-unused-matches -fno-warn-unused-imports -fno-warn-type-defaults #-}
 
 import qualified Data.Text.ICU.Convert as C
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import Data.Bits
 import Data.Binary.Get
+import Data.Binary.IEEE754
+import Data.Int
 import Control.Monad
 import Control.Applicative
 import Codec.Text.IConv
@@ -28,8 +30,9 @@ data TraceHeader = TraceHeader { traceNum :: Int -- Bytes 1 - 4
                  , traceIdCode :: Int -- Byte 29 - 30
 } deriving(Show)
 
+
 data Trace = Trace { traceHeader :: TraceHeader
-           , dataPoints :: [Word32]
+           , dataPoints :: [Float]
 } deriving(Show)
 
 
@@ -75,20 +78,40 @@ getTraceHeader = TraceHeader <$> getWord32toIntegral -- traceNum
                              <* skip (240 - 26)
 
 
--- Based on this python implementation:
--- http://stackoverflow.com/questions/7125890/python-unpack-ibm-32-bit-float-point
+-- Convert IBM floating point to IEEE754 format, using only integer
+-- bit shifting operations. Endianness is assumed to already have been
+-- handled, we are using native endinanness here.
 --
-ibm2ieee :: Word32 -> Float
-ibm2ieee ibm  = do
-    let sign = (ibm `shiftL` 31) .&. 0x01
-    let exponent = (ibm `shiftL` 24) .&. 0x7f
-    --let mantissa = (ibm .&. 0x00ffffff) / 1
-    --let sign = ibm `shiftL` 31 & 0x01
-    0.1
+-- This is based on CWP-SU's ibm_to_float in
+-- 43R3/src/su/main/data_conversion/segyread.c (not part of this code
+-- repository).
+--
+ibmToIeee754 :: Word32 -> Word32
+ibmToIeee754 0 = 0
+ibmToIeee754 from
+  | t1 > 254  = let !maxmag = sign .|. 0x7f7fffff in maxmag
+  | t1 <= 0   = 0
+  | otherwise = let !v = sign .|. exp' .|. frac in v
+  where
+    sign = 0x80000000 .&. from
+    exp' = fromIntegral t1 `unsafeShiftL` 23
+    frac = 0x007fffff .&. fmant1
+    (fmant1, t1) = iter fmant0 t0
+    fmant0 = 0x00ffffff .&. from
+    -- t values may end up negative, so we must treat them as Int32
+    -- instead of Word32.
+    t0 = ((0x7f000000 .&. fromIntegral from) `unsafeShiftR` 22) - 130 :: Int32
+    iter fmant t
+      | 0x00800000 .&. fmant == 0 = iter fmant' t'
+      | otherwise                 = (fmant, t)
+      where
+        !fmant' = fmant `unsafeShiftL` 1
+        !t'     = t - 1
 
 
 getData :: Get Word32
 getData = getWord32be
+
 
 getTraceData :: Int -> Get [Word32]
 getTraceData numSamples = do
@@ -96,11 +119,13 @@ getTraceData numSamples = do
       getWord32be
     return $ val
 
+
 getTrace :: BinaryHeader -> Get Trace 
 getTrace bh = do
       th <- getTraceHeader
       x <- getTraceData $ numSamples bh
-      return $ Trace th x
+      let ibmvec = fmap (wordToFloat . ibmToIeee754) x
+      return $ Trace th ibmvec
 
 
 getSEGY :: Get Output  
@@ -114,7 +139,6 @@ getSEGY = do
     trace <- forM [1 .. 3] $ \func -> do
       getTrace bheader
 
-      
     --forM [1..numTraces] getTraceHeader
     -- somehow extract numTraces
     -- forM [1..numTraces] getTrace
@@ -130,10 +154,12 @@ getSEGY = do
     
     return $ Output header bheader trace
 
+
 main :: IO()
 main = do
     --orig <- BL.readFile "WD_3D.sgy"
-    orig <- BL.readFile "test_200x200x50_cube_ieee.segy"
+    --orig <- BL.readFile "test_200x200x50_cube_ieee.segy"
+    orig <- BL.readFile "test_200x200x50_cube_ibm.segy"
     --orig <- BL.readFile "Avenue.sgy"
     --orig <- BL.readFile "test02.segy"
 
