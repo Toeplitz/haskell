@@ -47,6 +47,8 @@ getTextFileHeader = getLazyByteString 3200
 getTextHeader :: Get [BL.ByteString]
 getTextHeader = replicateM 40 getTextHeaderLine
 
+-- In the segy standard all binary values are defined
+-- as big-endian byte ordering.
 getWord16toIntegral :: Get Int
 getWord16toIntegral = getWord16be >>= return . fromIntegral -- Inject Num into the Get monadic type
 getWord32toIntegral :: Get Int
@@ -109,9 +111,6 @@ ibmToIeee754 from
         !t'     = t - 1
 
 
-getData :: Get Word32
-getData = getWord32be
-
 
 getTraceData :: Int -> Get [Word32]
 getTraceData numSamples = do
@@ -123,12 +122,11 @@ getTraceData numSamples = do
 getTrace :: Int -> Int-> Get Trace 
 getTrace numSamples sampleFormat = do
       th <- getTraceHeader
-      x <- getTraceData $ numSamples 
-      case sampleFormat of _
-          | sampleInterval == 5 = return $ Trace th (wordToFloat x)
-          | sampleInterval == 1 = return $ Trace th (fmap (wordToFloat . ibmToIeee754) x)
-          | otherwise error "Error: only ibm floating poins or ieee754 sample formats are supported."
-      --return $ Trace th vec
+      x <- getTraceData numSamples 
+      case sampleFormat of 
+        5 -> return $ Trace th $ wordToFloat <$> x
+        1 -> return $ Trace th $ wordToFloat . ibmToIeee754 <$> x
+        _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
 
 getSEGY :: Get Output  
@@ -137,7 +135,7 @@ getSEGY = do
     bheader <- getBinHeader
 
     trace <- forM [1 .. 3] $ \func -> do
-      getTrace (numSamples bh) (sampleFormat bh)
+      getTrace (numSamples bheader) (sampleFormat bheader)
 
     return $ Output header bheader trace
 
