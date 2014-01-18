@@ -115,17 +115,20 @@ getData = getWord32be
 
 getTraceData :: Int -> Get [Word32]
 getTraceData numSamples = do
-    val <- forM [1 .. 4] $ \func -> do
+    val <- forM [1 .. numSamples] $ \func -> do
       getWord32be
     return $ val
 
 
-getTrace :: BinaryHeader -> Get Trace 
-getTrace bh = do
+getTrace :: Int -> Int-> Get Trace 
+getTrace numSamples sampleFormat = do
       th <- getTraceHeader
-      x <- getTraceData $ numSamples bh
-      let ibmvec = fmap (wordToFloat . ibmToIeee754) x
-      return $ Trace th ibmvec
+      x <- getTraceData $ numSamples 
+      case sampleFormat of _
+          | sampleInterval == 5 = return $ Trace th (wordToFloat x)
+          | sampleInterval == 1 = return $ Trace th (fmap (wordToFloat . ibmToIeee754) x)
+          | otherwise error "Error: only ibm floating poins or ieee754 sample formats are supported."
+      --return $ Trace th vec
 
 
 getSEGY :: Get Output  
@@ -133,33 +136,17 @@ getSEGY = do
     header <- getTextHeader
     bheader <- getBinHeader
 
-    -- FIXME: Can I run mapM instead or forM without using a lambda function?
-    -- trace <- forM [1 .. numTraces bheader] getTrace does not work
-    --trace <- forM [1 .. numTraces bheader] $ \func -> do
     trace <- forM [1 .. 3] $ \func -> do
-      getTrace bheader
+      getTrace (numSamples bh) (sampleFormat bh)
 
-    --forM [1..numTraces] getTraceHeader
-    -- somehow extract numTraces
-    -- forM [1..numTraces] getTrace
-    --     getTrace will get both the header and data
-    --     getTrace = do
-    --           header <- getTraceHeader
-    --           data <- getData
-    --            return (header,data)
-    --     getData = do 
-    --           forM [1..numberOfDataPoints] getDataPoint
-    --     getDataPoint = do
-     --          getFloat or getVector, etc.
-    
     return $ Output header bheader trace
 
 
 main :: IO()
 main = do
     --orig <- BL.readFile "WD_3D.sgy"
-    --orig <- BL.readFile "test_200x200x50_cube_ieee.segy"
-    orig <- BL.readFile "test_200x200x50_cube_ibm.segy"
+    orig <- BL.readFile "test_200x200x50_cube_ieee.segy"
+    --orig <- BL.readFile "test_200x200x50_cube_ibm.segy"
     --orig <- BL.readFile "Avenue.sgy"
     --orig <- BL.readFile "test02.segy"
 
