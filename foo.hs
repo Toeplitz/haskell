@@ -13,7 +13,10 @@ import Codec.Text.IConv
 import qualified Data.ByteString.Lazy.Char8 as BC
 import Data.Word
 import qualified Text.Show.Pretty as Pr
- 
+import System.Environment
+import System.Exit
+import System.Console.GetOpt
+
 
 -- Values from 400 Byte binary header
 data BinaryHeader = BinaryHeader { numTraces :: Int -- Bytes 3213 - 3214
@@ -140,16 +143,41 @@ getSEGY = do
     return $ Output header bheader trace
 
 
+data Options = Options { optHelp :: Bool
+          , optVersion :: Bool
+          } deriving(Show)
+
+parse :: [String] -> IO String
+parse ["-h"] = getProgName >>= usage >> exit
+parse ["-e"] = return printEbcdic
+parse fs     = concat `fmap` mapM readFile fs
+
+printEbcdic :: String
+printEbcdic = "printing ebcdic header"
+
+segy :: String -> String
+segy  = unlines . reverse . lines
+
+
+usage :: String -> IO ()
+usage name = putStrLn $ "Usage: " ++ name ++ " [-h] [file ..]"
+
+
+exit :: IO a
+exit = exitWith ExitSuccess
+
+
 main :: IO()
-main = do
+main = getArgs >>= parse >>= putStr . segy
+
     --orig <- BL.readFile "WD_3D.sgy"
-    orig <- BL.readFile "test_200x200x50_cube_ieee.segy"
+    --orig <- BL.readFile "test_200x200x50_cube_ieee.segy"
     --orig <- BL.readFile "test_200x200x50_cube_ibm.segy"
     --orig <- BL.readFile "Avenue.sgy"
     --orig <- BL.readFile "test02.segy"
 
-    let Output h bh theaders = runGet getSEGY orig 
-    BC.putStr $ BC.unlines h
-    putStrLn $ Pr.ppShow (bh)
-    putStrLn . Pr.ppShow $ map traceHeader (take 3 theaders)
-    putStrLn . Pr.ppShow $ map dataPoints (take 3 theaders)
+    --let Output h bh theaders = runGet getSEGY orig 
+    --BC.putStr $ BC.unlines h
+    --putStrLn $ Pr.ppShow (bh)
+    --putStrLn . Pr.ppShow $ map traceHeader (take 3 theaders)
+    --putStrLn . Pr.ppShow $ map dataPoints (take 3 theaders)
