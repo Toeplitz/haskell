@@ -12,13 +12,11 @@ import Control.Applicative
 import Codec.Text.IConv
 import qualified Data.ByteString.Lazy.Char8 as BC
 import Data.Word
-import qualified Text.Show.Pretty as Pr
 import System.Environment
-import System.Exit
 import System.Console.GetOpt
-import System.IO 
-import Data.List
-import Data.Char
+import Data.Maybe (fromMaybe)
+
+import qualified Text.Show.Pretty as Pr
 
 
 -- Values from 400 Byte binary header
@@ -146,67 +144,87 @@ getSEGY = do
     return $ Output header bheader trace
 
 
-data Options = Options  { optEbcdic      :: IO String
-                        }
+data Options = Options
+ { optVerbose     :: Bool
+ , optShowVersion :: Bool
+ , optOutput      :: Maybe FilePath
+ , optInput       :: Maybe FilePath
+ , optSegy        :: Maybe String
+ , optLibDirs     :: [FilePath]
+ } 
 
 
-startOptions :: Options
-startOptions = Options  { optEbcdic      = getContents
-                        }
+defaultOptions    = Options
+ { optVerbose     = False
+ , optShowVersion = False
+ , optOutput      = Nothing
+ , optInput       = Nothing
+ , optSegy        = Nothing
+ , optLibDirs     = []
+ }
 
 
-options :: [ OptDescr (Options -> IO Options) ]
+options :: [OptDescr (Options -> Options)]
 options =
-    [ Option "e" ["ebcdic"]
-        (ReqArg
-            (\arg opt -> return opt { optEbcdic = readFile arg })
-            "FILE")
-        "Print EBCDIC header"
-    , Option "v" ["version"]
-        (NoArg
-            (\_ -> do
-                hPutStrLn stderr "Version 0.01"
-                exitWith ExitSuccess))
-        "Print version"
- 
-    , Option "h" ["help"]
-        (NoArg
-            (\_ -> do
-                prg <- getProgName
-                hPutStrLn stderr (usageInfo prg options)
-                exitWith ExitSuccess))
-        "Show help"
-    ]
+ [ Option ['v']     ["verbose"]
+     (NoArg (\ opts -> opts { optVerbose = True }))
+     "chatty output on stderr"
+ , Option ['V','?'] ["version"]
+     (NoArg (\ opts -> opts { optShowVersion = True }))
+     "show version number"
+ , Option ['o']     ["output"]
+     (OptArg ((\ f opts -> opts { optOutput = Just f }) . fromMaybe "output")
+             "FILE")
+     "output FILE"
+ , Option ['c']     []
+     (OptArg ((\ f opts -> opts { optInput = Just f }) . fromMaybe "input")
+             "FILE")
+     "input FILE"
+ , Option ['e']     []
+     (OptArg ((\ f opts -> opts { optSegy = printEbcdic f }) . fromMaybe "ebcdic")
+             "FILE")
+     "input FILE"
+ , Option ['L']     ["libdir"]
+     (ReqArg (\ d opts -> opts { optLibDirs = optLibDirs opts ++ [d] }) "DIR")
+     "library directory"
+ ]
 
+compilerOpts :: [String] -> IO (Options, [String])
+compilerOpts argv =
+   case getOpt Permute options argv of
+      (o,n,[]  ) -> return (foldl (flip id) defaultOptions o, n)
+      (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
+  where header = "Usage: foo.hs [OPTION...] files..."
+
+
+printEbcdic :: FilePath -> Maybe [BL.ByteString]
+printEbcdic file = do
+  orig <- BL.readFile file
+  let Output h bh theaders = runGet getSEGY orig 
+  return h 
 
 
 main :: IO()
 main = do
-    args <- getArgs
- 
-    -- Parse options, getting a list of option actions
-    let (actions, nonOptions, errors) = getOpt RequireOrder options args
- 
-    -- Here we thread startOptions through all supplied option actions
-    opts <- foldl (>>=) (return startOptions) actions
- 
-    let Options { optEbcdic = foo
-                } = opts
+  args <- getArgs
+  (opts, strs) <- compilerOpts args
 
-    putStrLn . Pr.ppShow $ opts
-    foo >>= putStrLn
+  case optSegy opts of 
+    Just f -> BC.putStr $ BC.unlines f
+    Nothing -> return ()
 
 
---getArgs >>= parse >>= putStr . segy
+  --putStrLn . Pr.ppShow $ strs
+  --putStrLn . Pr.ppShow $ opts
 
-    --orig <- BL.readFile "WD_3D.sgy"
-    --orig <- BL.readFile "test_200x200x50_cube_ieee.segy"
-    --orig <- BL.readFile "test_200x200x50_cube_ibm.segy"
-    --orig <- BL.readFile "Avenue.sgy"
-    --orig <- BL.readFile "test02.segy"
 
-    --let Output h bh theaders = runGet getSEGY orig 
-    --BC.putStr $ BC.unlines h
-    --putStrLn $ Pr.ppShow (bh)
-    --putStrLn . Pr.ppShow $ map traceHeader (take 3 theaders)
-    --putStrLn . Pr.ppShow $ map dataPoints (take 3 theaders)
+--orig <- BL.readFile "WD_3D.sgy"
+--orig <- BL.readFile "test_200x200x50_cube_ieee.segy"
+--orig <- BL.readFile "test_200x200x50_cube_ibm.segy"
+--orig <- BL.readFile "Avenue.sgy"
+--orig <- BL.readFile "test02.segy"
+
+--let Output h bh theaders = runGet getSEGY orig 
+--putStrLn $ Pr.ppShow (bh)
+--putStrLn . Pr.ppShow $ map traceHeader (take 3 theaders)
+--putStrLn . Pr.ppShow $ map dataPoints (take 3 theaders)
