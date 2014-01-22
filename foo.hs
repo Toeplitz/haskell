@@ -16,6 +16,9 @@ import qualified Text.Show.Pretty as Pr
 import System.Environment
 import System.Exit
 import System.Console.GetOpt
+import System.IO 
+import Data.List
+import Data.Char
 
 
 -- Values from 400 Byte binary header
@@ -143,32 +146,58 @@ getSEGY = do
     return $ Output header bheader trace
 
 
-data Options = Options { optHelp :: Bool
-          , optVersion :: Bool
-          } deriving(Show)
-
-parse :: [String] -> IO String
-parse ["-h"] = getProgName >>= usage >> exit
-parse ["-e"] = return printEbcdic
-parse fs     = concat `fmap` mapM readFile fs
-
-printEbcdic :: String
-printEbcdic = "printing ebcdic header"
-
-segy :: String -> String
-segy  = unlines . reverse . lines
+data Options = Options  { optEbcdic      :: IO String
+                        }
 
 
-usage :: String -> IO ()
-usage name = putStrLn $ "Usage: " ++ name ++ " [-h] [file ..]"
+startOptions :: Options
+startOptions = Options  { optEbcdic      = getContents
+                        }
 
 
-exit :: IO a
-exit = exitWith ExitSuccess
+options :: [ OptDescr (Options -> IO Options) ]
+options =
+    [ Option "e" ["ebcdic"]
+        (ReqArg
+            (\arg opt -> return opt { optEbcdic = readFile arg })
+            "FILE")
+        "Print EBCDIC header"
+    , Option "v" ["version"]
+        (NoArg
+            (\_ -> do
+                hPutStrLn stderr "Version 0.01"
+                exitWith ExitSuccess))
+        "Print version"
+ 
+    , Option "h" ["help"]
+        (NoArg
+            (\_ -> do
+                prg <- getProgName
+                hPutStrLn stderr (usageInfo prg options)
+                exitWith ExitSuccess))
+        "Show help"
+    ]
+
 
 
 main :: IO()
-main = getArgs >>= parse >>= putStr . segy
+main = do
+    args <- getArgs
+ 
+    -- Parse options, getting a list of option actions
+    let (actions, nonOptions, errors) = getOpt RequireOrder options args
+ 
+    -- Here we thread startOptions through all supplied option actions
+    opts <- foldl (>>=) (return startOptions) actions
+ 
+    let Options { optEbcdic = foo
+                } = opts
+
+    putStrLn . Pr.ppShow $ opts
+    foo >>= putStrLn
+
+
+--getArgs >>= parse >>= putStr . segy
 
     --orig <- BL.readFile "WD_3D.sgy"
     --orig <- BL.readFile "test_200x200x50_cube_ieee.segy"
