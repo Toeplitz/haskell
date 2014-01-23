@@ -29,11 +29,6 @@ data BinaryHeader = BinaryHeader { numTraces :: Int -- Bytes 3213 - 3214
 } deriving(Show)
 
 
--- Values from 240 Byte trace header
-data TraceHeader = TraceHeader { traceNum :: Int -- Bytes 1 - 4
-                 , traceNumSegy :: Int -- Byte 5 - 8
-                 , traceIdCode :: Int -- Byte 29 - 30
-} deriving(Show)
 
 
 data Trace = Trace { traceHeader :: TraceHeader
@@ -79,13 +74,51 @@ getBinHeader = BinaryHeader <$> skip 12
                             *>> getWord16toIntegral -- sampleFormat
                             <*  skip (400-26)
 
+-- Values from 240 Byte trace header
+data TraceHeader = TraceHeader { traceNumLine :: Int -- Bytes 1 - 4
+                 , traceSeqNum :: Int -- Byte 5 - 8
+                 , origFieldRecordNum :: Int -- Byte 9 - 12
+                 , traceNumFieldRec :: Int -- Byte 13 - 16
+                 , energySourcePointNum :: Int -- Byte 17 - 20
+                 , ensembleNum :: Int -- Byte 21 - 24
+                 , traceNumEnsemble :: Int -- Byte 25 - 28
+                 , traceIdCode :: Int -- Byte 29 - 30
+                 , numVertSumTraces :: Int -- Byte 31 - 32
+                 , numHorStackTraces :: Int -- Byte 33 - 34
+                 , datUse :: Int -- Byte 35 - 36
+                 , distSourcePoint :: Int -- Byte 37 - 40
+} deriving(Show)
 
 getTraceHeader :: Get TraceHeader
-getTraceHeader = TraceHeader <$> getWord32toIntegral -- traceNum
-                             <*> getWord32toIntegral -- traceNumSegy
-                             <*> skip 16
-                             *>> getWord16toIntegral -- traceIdCode
-                             <* skip (240 - 26)
+getTraceHeader = TraceHeader <$> getWord32toIntegral -- traceNumLine
+                             <*> getWord32toIntegral -- traceSeqNumline
+                             <*> getWord32toIntegral -- origFieldRecordNum 
+                             <*> getWord32toIntegral -- traceNumFieldRec 
+                             <*> getWord32toIntegral -- energySourcePointNum
+                             <*> getWord32toIntegral -- ensembleNum
+                             <*> getWord32toIntegral -- traceNumEnsemble
+                             <*> getWord16toIntegral -- traceIdCode
+                             <*> getWord16toIntegral -- numVertSumTraces
+                             <*> getWord16toIntegral -- numHorStackTraces
+                             <*> getWord16toIntegral -- dataUse
+                             <*> getWord32toIntegral -- distSourcePoint
+                             <* skip (240 - 40)
+
+
+getTraceHeaderMinimal :: Get TraceHeader
+getTraceHeaderMinimal = TraceHeader <$> getWord32toIntegral -- traceNumLine
+                             <*> getWord32toIntegral -- traceSeqNumline
+                             <*> getWord32toIntegral -- origFieldRecordNum 
+                             <*> getWord32toIntegral -- traceNumFieldRec 
+                             <*> getWord32toIntegral -- energySourcePointNum
+                             <*> getWord32toIntegral -- ensembleNum
+                             <*> getWord32toIntegral -- traceNumEnsemble
+                             <*> getWord16toIntegral -- traceIdCode
+                             <*> getWord16toIntegral -- numVertSumTraces
+                             <*> getWord16toIntegral -- numHorStackTraces
+                             <*> getWord16toIntegral -- dataUse
+                             <*> getWord32toIntegral -- distSourcePoint
+                             <* skip (240 - 40)
 
 
 -- Convert IBM floating point to IEEE754 format, using only integer
