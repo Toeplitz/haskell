@@ -3,6 +3,7 @@
 import qualified Data.Text.ICU.Convert as C
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.UTF8 as BU
 import Data.Bits
 import Data.Binary.Get
 import Data.Binary.IEEE754
@@ -40,7 +41,10 @@ data Trace = Trace { traceHeader :: TraceHeader
 } deriving(Show)
 
 
-data Output = Output [BL.ByteString] BinaryHeader [Trace]
+data Output = Output { ebcdic :: [BL.ByteString]
+                     , binaryHeader :: BinaryHeader 
+                     , trace :: [Trace]
+} deriving Show
 
 
 getTextHeaderLine,getTextFileHeader :: Get BL.ByteString
@@ -145,48 +149,25 @@ getSEGY = do
 
 
 data Options = Options
- { optVerbose     :: Bool
- , optShowVersion :: Bool
- , optOutput      :: Maybe FilePath
- , optInput       :: Maybe FilePath
- , optSegy        :: Maybe String
- , optLibDirs     :: [FilePath]
- } 
+ { optShowVersion :: Bool
+ , optPrintEbcdic :: Bool
+ } deriving Show
 
 
 defaultOptions    = Options
- { optVerbose     = False
- , optShowVersion = False
- , optOutput      = Nothing
- , optInput       = Nothing
- , optSegy        = Nothing
- , optLibDirs     = []
+ { optShowVersion = False
+ , optPrintEbcdic = False
  }
 
 
 options :: [OptDescr (Options -> Options)]
 options =
- [ Option ['v']     ["verbose"]
-     (NoArg (\ opts -> opts { optVerbose = True }))
-     "chatty output on stderr"
- , Option ['V','?'] ["version"]
+ [ Option ['v'] ["version"]
      (NoArg (\ opts -> opts { optShowVersion = True }))
      "show version number"
- , Option ['o']     ["output"]
-     (OptArg ((\ f opts -> opts { optOutput = Just f }) . fromMaybe "output")
-             "FILE")
-     "output FILE"
- , Option ['c']     []
-     (OptArg ((\ f opts -> opts { optInput = Just f }) . fromMaybe "input")
-             "FILE")
-     "input FILE"
- , Option ['e']     []
-     (OptArg ((\ f opts -> opts { optSegy = printEbcdic f }) . fromMaybe "ebcdic")
-             "FILE")
-     "input FILE"
- , Option ['L']     ["libdir"]
-     (ReqArg (\ d opts -> opts { optLibDirs = optLibDirs opts ++ [d] }) "DIR")
-     "library directory"
+ , Option ['e'] ["ebcdic"]
+     (NoArg (\ opts -> opts { optPrintEbcdic = True }))
+     "print ebcdic header"
  ]
 
 compilerOpts :: [String] -> IO (Options, [String])
@@ -197,11 +178,12 @@ compilerOpts argv =
   where header = "Usage: foo.hs [OPTION...] files..."
 
 
-printEbcdic :: FilePath -> Maybe [BL.ByteString]
-printEbcdic file = do
-  orig <- BL.readFile file
-  let Output h bh theaders = runGet getSEGY orig 
-  return h 
+printEbcdic :: Output -> IO ()
+printEbcdic bs = BC.putStrLn $ BC.unlines (ebcdic bs)
+
+
+readSegyLazy :: FilePath -> IO BL.ByteString
+readSegyLazy file = BL.readFile file
 
 
 main :: IO()
@@ -209,22 +191,14 @@ main = do
   args <- getArgs
   (opts, strs) <- compilerOpts args
 
-  case optSegy opts of 
-    Just f -> BC.putStr $ BC.unlines f
-    Nothing -> return ()
+  orig <- mapM readSegyLazy strs
+  let output = (runGet getSEGY) <$> orig
 
+  when (optPrintEbcdic opts == True) $ mapM_ printEbcdic output
 
-  --putStrLn . Pr.ppShow $ strs
-  --putStrLn . Pr.ppShow $ opts
+  putStrLn . Pr.ppShow $ strs
+  putStrLn . Pr.ppShow $ opts
 
-
---orig <- BL.readFile "WD_3D.sgy"
---orig <- BL.readFile "test_200x200x50_cube_ieee.segy"
---orig <- BL.readFile "test_200x200x50_cube_ibm.segy"
---orig <- BL.readFile "Avenue.sgy"
---orig <- BL.readFile "test02.segy"
-
---let Output h bh theaders = runGet getSEGY orig 
 --putStrLn $ Pr.ppShow (bh)
 --putStrLn . Pr.ppShow $ map traceHeader (take 3 theaders)
 --putStrLn . Pr.ppShow $ map dataPoints (take 3 theaders)
