@@ -151,54 +151,68 @@ getSEGY = do
 data Options = Options
  { optShowVersion :: Bool
  , optPrintEbcdic :: Bool
+ , optPrintBinary :: Bool
  } deriving Show
 
 
 defaultOptions    = Options
  { optShowVersion = False
  , optPrintEbcdic = False
+ , optPrintBinary = False
  }
 
 
 options :: [OptDescr (Options -> Options)]
 options =
  [ Option ['v'] ["version"]
-     (NoArg (\ opts -> opts { optShowVersion = True }))
+     (NoArg (\opts -> opts { optShowVersion = True }))
      "show version number"
  , Option ['e'] ["ebcdic"]
-     (NoArg (\ opts -> opts { optPrintEbcdic = True }))
+     (NoArg (\opts -> opts { optPrintEbcdic = True }))
      "print ebcdic header"
+ , Option ['b'] ["binary"]
+     (NoArg (\opts -> opts { optPrintBinary = True }))
+     "print binary header"
  ]
+
+header :: String
+header =  "Usage: segyParse.hs [OPTION...] files..."
+
 
 compilerOpts :: [String] -> IO (Options, [String])
 compilerOpts argv =
    case getOpt Permute options argv of
       (o,n,[]  ) -> return (foldl (flip id) defaultOptions o, n)
       (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
-  where header = "Usage: foo.hs [OPTION...] files..."
 
 
 printEbcdic :: Output -> IO ()
 printEbcdic bs = BC.putStrLn $ BC.unlines (ebcdic bs)
 
 
+printBinaryHeader :: Output -> IO ()
+printBinaryHeader bh = putStrLn $ Pr.ppShow (binaryHeader bh)
+
+
 readSegyLazy :: FilePath -> IO BL.ByteString
 readSegyLazy file = BL.readFile file
+
+
+parseFile :: Options -> Output -> IO ()
+parseFile opts output = do
+  when (optPrintEbcdic opts) $ printEbcdic output
+  when (optPrintBinary opts) $ printBinaryHeader output
 
 
 main :: IO()
 main = do
   args <- getArgs
   (opts, strs) <- compilerOpts args
+  when (null strs) $ error header
 
   orig <- mapM readSegyLazy strs
   let output = (runGet getSEGY) <$> orig
+  mapM_ (parseFile opts) output
 
-  when (optPrintEbcdic opts == True) $ mapM_ printEbcdic output
-
-  putStrLn . Pr.ppShow $ strs
-  putStrLn . Pr.ppShow $ opts
-
---putStrLn $ Pr.ppShow (bh)
---putStrLn . Pr.ppShow $ map traceHeader (take 3 theaders)
---putStrLn . Pr.ppShow $ map dataPoints (take 3 theaders)
+  --putStrLn . Pr.ppShow $ strs
+  --putStrLn . Pr.ppShow $ opts
