@@ -212,7 +212,8 @@ parseFile :: Options -> Output -> IO ()
 parseFile opts output = do
   when (optPrintEbcdic opts) $ printEbcdic output
   when (optPrintBinary opts) $ printBinaryHeader output
-  when (isJust (optPrintTraces opts)) $ printTraces (read (fromJust (optPrintTraces opts)) :: Int) output
+  when (isJust $ optPrintTraces opts) $ printTraces num output
+    where num = read (fromJust $ optPrintTraces opts) :: Int
 
 
 main :: IO()
@@ -221,9 +222,8 @@ main = do
   (opts, strs) <- compilerOpts args
   when (null strs) $ error header
 
-  orig <- mapM readSegyLazy strs
-  let output = (runGet getSEGY) <$> orig
-  mapM_ (parseFile opts) output
+  streams <- mapM readSegyLazy strs
+  mapM_ (parseFile opts) $ runGet getSEGY <$> streams
 
-  putStrLn . Pr.ppShow $ strs
-  putStrLn . Pr.ppShow $ opts
+  --putStrLn . Pr.ppShow $ strs
+  --putStrLn . Pr.ppShow $ opts
