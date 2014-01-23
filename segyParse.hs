@@ -74,19 +74,20 @@ getBinHeader = BinaryHeader <$> skip 12
                             *>> getWord16toIntegral -- sampleFormat
                             <*  skip (400-26)
 
+
 -- Values from 240 Byte trace header
-data TraceHeader = TraceHeader { traceNumLine :: Int -- Bytes 1 - 4
-                 , traceSeqNum :: Int -- Byte 5 - 8
-                 , origFieldRecordNum :: Int -- Byte 9 - 12
-                 , traceNumFieldRec :: Int -- Byte 13 - 16
-                 , energySourcePointNum :: Int -- Byte 17 - 20
-                 , ensembleNum :: Int -- Byte 21 - 24
-                 , traceNumEnsemble :: Int -- Byte 25 - 28
-                 , traceIdCode :: Int -- Byte 29 - 30
-                 , numVertSumTraces :: Int -- Byte 31 - 32
-                 , numHorStackTraces :: Int -- Byte 33 - 34
-                 , datUse :: Int -- Byte 35 - 36
-                 , distSourcePoint :: Int -- Byte 37 - 40
+data TraceHeader = TraceHeader { traceNumLine         :: Int -- Bytes 1 - 4
+                               , traceSeqNum          :: Int -- Bytes 5 - 8
+                               , origFieldRecordNum   :: Int -- Bytes 9 - 12
+                               , traceNumFieldRec     :: Int -- Bytes 13 - 16
+                               , energySourcePointNum :: Int -- Bytes 17 - 20
+                               , ensembleNum          :: Int -- Bytes 21 - 24
+                               , traceNumEnsemble     :: Int -- Bytes 25 - 28
+                               , traceIdCode          :: Int -- Bytes 29 - 30
+                               , numVertSumTraces     :: Int -- Bytes 31 - 32
+                               , numHorStackTraces    :: Int -- Bytes 33 - 34
+                               , datUse               :: Int -- Bytes 35 - 36
+                               , distSourcePoint      :: Int -- Bytes 37 - 40
 } deriving(Show)
 
 getTraceHeader :: Get TraceHeader
