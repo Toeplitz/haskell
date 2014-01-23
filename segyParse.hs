@@ -15,7 +15,7 @@ import qualified Data.ByteString.Lazy.Char8 as BC
 import Data.Word
 import System.Environment
 import System.Console.GetOpt
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, fromJust, isJust)
 
 import qualified Text.Show.Pretty as Pr
 
@@ -142,7 +142,7 @@ getSEGY = do
     header <- getTextHeader
     bheader <- getBinHeader
 
-    trace <- forM [1 .. 3] $ \func -> do
+    trace <- forM [1 .. 100] $ \func -> do
       getTrace (numSamples bheader) (sampleFormat bheader)
 
     return $ Output header bheader trace
@@ -152,6 +152,7 @@ data Options = Options
  { optShowVersion :: Bool
  , optPrintEbcdic :: Bool
  , optPrintBinary :: Bool
+ , optPrintTraces :: Maybe String
  } deriving Show
 
 
@@ -159,6 +160,7 @@ defaultOptions    = Options
  { optShowVersion = False
  , optPrintEbcdic = False
  , optPrintBinary = False
+ , optPrintTraces = Nothing
  }
 
 
@@ -173,6 +175,9 @@ options =
  , Option ['b'] ["binary"]
      (NoArg (\opts -> opts { optPrintBinary = True }))
      "print binary header"
+ , Option ['t'] ["trace"]
+     (OptArg ((\f opts -> opts { optPrintTraces = Just f }) . fromMaybe "trace") "N")
+       "print summary of N first traces"
  ]
 
 header :: String
@@ -194,6 +199,11 @@ printBinaryHeader :: Output -> IO ()
 printBinaryHeader bh = putStrLn $ Pr.ppShow (binaryHeader bh)
 
 
+printTraces :: Int -> Output -> IO ()
+printTraces num output = putStrLn . Pr.ppShow $ traceHeader <$> traces
+                          where traces = take num (trace output)
+
+
 readSegyLazy :: FilePath -> IO BL.ByteString
 readSegyLazy file = BL.readFile file
 
@@ -202,6 +212,7 @@ parseFile :: Options -> Output -> IO ()
 parseFile opts output = do
   when (optPrintEbcdic opts) $ printEbcdic output
   when (optPrintBinary opts) $ printBinaryHeader output
+  when (isJust (optPrintTraces opts)) $ printTraces (read (fromJust (optPrintTraces opts)) :: Int) output
 
 
 main :: IO()
@@ -214,5 +225,5 @@ main = do
   let output = (runGet getSEGY) <$> orig
   mapM_ (parseFile opts) output
 
-  --putStrLn . Pr.ppShow $ strs
-  --putStrLn . Pr.ppShow $ opts
+  putStrLn . Pr.ppShow $ strs
+  putStrLn . Pr.ppShow $ opts
