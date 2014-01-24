@@ -18,6 +18,7 @@ import System.Console.GetOpt
 import Data.Maybe (fromMaybe, fromJust, isJust)
 
 import qualified Text.Show.Pretty as Pr
+import qualified Data.Traversable as Tr
 
 
 -- Values from 400 Byte binary header
@@ -75,6 +76,16 @@ getBinHeader = BinaryHeader <$> skip 12
                             <*  skip (400-26)
 
 
+data BinaryLocation = BinaryLocation { description :: String 
+                                     , startByte   :: Int
+                                     , endByte     :: Int
+                                     , value       :: Maybe Int
+}
+
+traceHeaderList = [ BinaryLocation "Trace sequence number within line"             1 4 Nothing
+                  , BinaryLocation "Trace sequence number within SEG Y file"       5 8 Nothing ]
+
+
 -- Values from 240 Byte trace header
 data TraceHeader = TraceHeader { traceNumLine         :: Int -- Bytes 1 - 4
                                , traceSeqNum          :: Int -- Bytes 5 - 8
@@ -88,7 +99,21 @@ data TraceHeader = TraceHeader { traceNumLine         :: Int -- Bytes 1 - 4
                                , numHorStackTraces    :: Int -- Bytes 33 - 34
                                , datUse               :: Int -- Bytes 35 - 36
                                , distSourcePoint      :: Int -- Bytes 37 - 40
-} deriving(Show)
+                               , receiverGrpElev      :: Int -- Bytes 41 - 44
+                               , surfElevSource       :: Int -- Bytes 45 - 48
+                               , sourceDepth          :: Int -- Bytes 49 - 52
+                               , datumElevReceiver    :: Int -- Bytes 53 - 56
+                               , datumElevSource      :: Int -- Bytes 57 - 60
+                               , waterDepthSource     :: Int -- Bytes 61 - 64
+                               , waterDepthGroup      :: Int -- Bytes 65 - 68
+                               , scalarDepths         :: Int -- Bytes 69 - 70
+                               , scalarCoords         :: Int -- Bytes 71 - 72
+                               , sourceCoordX         :: Int -- Bytes 73 - 76
+                               , sourceCoordY         :: Int -- Bytes 77 - 80
+                               , groupCoordX          :: Int -- Bytes 81 - 84
+                               , groupCoordY          :: Int -- Bytes 85 - 88
+                               , coordUnit            :: Int -- Bytes 89 - 90
+} deriving Show
 
 getTraceHeader :: Get TraceHeader
 getTraceHeader = TraceHeader <$> getWord32toIntegral -- traceNumLine
@@ -103,23 +128,22 @@ getTraceHeader = TraceHeader <$> getWord32toIntegral -- traceNumLine
                              <*> getWord16toIntegral -- numHorStackTraces
                              <*> getWord16toIntegral -- dataUse
                              <*> getWord32toIntegral -- distSourcePoint
-                             <* skip (240 - 40)
+                             <*> getWord32toIntegral -- receiverGrpElev
+                             <*> getWord32toIntegral -- surfElevSource
+                             <*> getWord32toIntegral -- sourceDepth
+                             <*> getWord32toIntegral -- datumElevReceiver
+                             <*> getWord32toIntegral -- datumElevSource
+                             <*> getWord32toIntegral -- waterDepthSource
+                             <*> getWord32toIntegral -- waterDepthGroup
+                             <*> getWord16toIntegral -- scalarDepths
+                             <*> getWord16toIntegral -- scalarCoords
+                             <*> getWord32toIntegral -- sourceCoordX
+                             <*> getWord32toIntegral -- sourceCoordY
+                             <*> getWord32toIntegral -- groupCoordX
+                             <*> getWord32toIntegral -- groupCoordY
+                             <*> getWord16toIntegral -- coordUnit
+                             <* skip (240 - 90)
 
-
-getTraceHeaderMinimal :: Get TraceHeader
-getTraceHeaderMinimal = TraceHeader <$> getWord32toIntegral -- traceNumLine
-                             <*> getWord32toIntegral -- traceSeqNumline
-                             <*> getWord32toIntegral -- origFieldRecordNum 
-                             <*> getWord32toIntegral -- traceNumFieldRec 
-                             <*> getWord32toIntegral -- energySourcePointNum
-                             <*> getWord32toIntegral -- ensembleNum
-                             <*> getWord32toIntegral -- traceNumEnsemble
-                             <*> getWord16toIntegral -- traceIdCode
-                             <*> getWord16toIntegral -- numVertSumTraces
-                             <*> getWord16toIntegral -- numHorStackTraces
-                             <*> getWord16toIntegral -- dataUse
-                             <*> getWord32toIntegral -- distSourcePoint
-                             <* skip (240 - 40)
 
 
 -- Convert IBM floating point to IEEE754 format, using only integer
