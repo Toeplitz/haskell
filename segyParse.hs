@@ -1,5 +1,9 @@
 {-# OPTIONS -XBangPatterns -fno-warn-unused-binds -fno-warn-unused-matches -fno-warn-unused-imports -fno-warn-type-defaults #-}
 
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DeriveFoldable #-}
+
 import qualified Data.Text.ICU.Convert as C
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
@@ -18,7 +22,8 @@ import System.Console.GetOpt
 import Data.Maybe (fromMaybe, fromJust, isJust)
 
 import qualified Text.Show.Pretty as Pr
-import qualified Data.Traversable as Tr
+import qualified Data.Traversable as T
+import qualified Data.Foldable as F
 
 
 -- Values from 400 Byte binary header
@@ -37,9 +42,14 @@ data Trace = Trace { traceHeader :: TraceHeader
 } deriving(Show)
 
 
+data Trace2 = Trace2 { traceHeader2 :: TraceHeader2 ByteLoc
+           , dataPoints2 :: [Float]
+} deriving(Show)
+
+
 data Output = Output { ebcdic :: [BL.ByteString]
                      , binaryHeader :: BinaryHeader 
-                     , trace :: [Trace]
+                     , trace :: [Trace2]
 } deriving Show
 
 
@@ -76,14 +86,34 @@ getBinHeader = BinaryHeader <$> skip 12
                             <*  skip (400-26)
 
 
-data BinaryLocation = BinaryLocation { description :: String 
-                                     , startByte   :: Int
-                                     , endByte     :: Int
-                                     , value       :: Maybe Int
-}
+data ByteLoc = ByteLoc 
+  { description :: String 
+  , startByte   :: Int
+  , endByte     :: Int
+  , value       :: Maybe Int
+  } 
 
-traceHeaderList = [ BinaryLocation "Trace sequence number within line"             1 4 Nothing
-                  , BinaryLocation "Trace sequence number within SEG Y file"       5 8 Nothing ]
+
+instance Show ByteLoc where
+    show f = (description f) ++ "\t:\t" ++ val
+               where val = case value f of
+                             Just x -> show x
+                             Nothing -> "not set"
+
+
+data TraceHeader2 t = TraceHeader2 
+  { traceNumLine2         :: t -- Bytes 1 - 4
+  , traceSeqNum2          :: t -- Bytes 5 - 8
+  , origFieldRecordNum2   :: t -- Bytes 9 - 12
+  } deriving (Functor, T.Traversable, F.Foldable, Show)
+
+
+defaultTraceHeader :: TraceHeader2 ByteLoc
+defaultTraceHeader = TraceHeader2 
+  { traceNumLine2        = ByteLoc "Trace sequence number within line"             1 4  Nothing
+  , traceSeqNum2         = ByteLoc "Trace sequence number within SEG Y file"       5 8  Nothing 
+  , origFieldRecordNum2  = ByteLoc "Trace sequence number within SEG Y file"       9 12 Nothing 
+  }
 
 
 -- Values from 240 Byte trace header
@@ -114,6 +144,13 @@ data TraceHeader = TraceHeader { traceNumLine         :: Int -- Bytes 1 - 4
                                , groupCoordY          :: Int -- Bytes 85 - 88
                                , coordUnit            :: Int -- Bytes 89 - 90
 } deriving Show
+
+
+getTraceHeader2 :: ByteLoc -> Get ByteLoc
+getTraceHeader2 f = do
+    d <- getWord32toIntegral
+    return $ f { value = Just d } 
+
 
 getTraceHeader :: Get TraceHeader
 getTraceHeader = TraceHeader <$> getWord32toIntegral -- traceNumLine
@@ -185,13 +222,14 @@ getTraceData numSamples = do
     return $ val
 
 
-getTrace :: Int -> Int-> Get Trace 
+getTrace :: Int -> Int-> Get Trace2
 getTrace numSamples sampleFormat = do
-      th <- getTraceHeader
+  --    th <- getTraceHeader
+      th <- T.mapM getTraceHeader2 defaultTraceHeader
       x <- getTraceData numSamples 
       case sampleFormat of 
-        5 -> return $ Trace th $ wordToFloat <$> x
-        1 -> return $ Trace th $ wordToFloat . ibmToIeee754 <$> x
+        5 -> return $ Trace2 th $ wordToFloat <$> x
+        1 -> return $ Trace2 th $ wordToFloat . ibmToIeee754 <$> x
         _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
 
@@ -253,25 +291,28 @@ printEbcdic :: Output -> IO ()
 printEbcdic bs = BC.putStrLn $ BC.unlines (ebcdic bs)
 
 
-printBinaryHeader :: Output -> IO ()
-printBinaryHeader bh = putStrLn $ Pr.ppShow (binaryHeader bh)
+printBinaryHeader :: Output -> String
+printBinaryHeader output = Pr.ppShow (binaryHeader output)
 
 
-printTraces :: Int -> Output -> IO ()
-printTraces num output = putStrLn . Pr.ppShow $ traceHeader <$> traces
-                          where traces = take num (trace output)
+printTraceHeader trace = T.mapM print val
+                          where val = traceHeader2 trace
+
+
+printTraces num output = do
+  let traces = take num (trace output)
+  printTraceHeader <$> traces
 
 
 readSegyLazy :: FilePath -> IO BL.ByteString
 readSegyLazy file = BL.readFile file
 
 
-parseFile :: Options -> Output -> IO ()
-parseFile opts output = do
-  when (optPrintEbcdic opts) $ printEbcdic output
-  when (optPrintBinary opts) $ printBinaryHeader output
-  when (isJust $ optPrintTraces opts) $ printTraces num output
-    where num = read (fromJust $ optPrintTraces opts) :: Int
+--parseFile opts output = printBinaryHeader output
+--  when (optPrintEbcdic opts) $ printEbcdic output
+  --when (optPrintBinary opts) $ 
+  --when (isJust $ optPrintTraces opts) $ printTraces num output
+  --  where num = read (fromJust $ optPrintTraces opts) :: Int
 
 
 main :: IO()
@@ -281,7 +322,12 @@ main = do
   when (null strs) $ error header
 
   streams <- mapM readSegyLazy strs
-  mapM_ (parseFile opts) $ runGet getSEGY <$> streams
+  let (x:xs) = runGet getSEGY <$> streams
+
+  print $ binaryHeader x
+
+  T.mapM print defaultTraceHeader
+  return ()
 
   --putStrLn . Pr.ppShow $ strs
   --putStrLn . Pr.ppShow $ opts
