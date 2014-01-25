@@ -6,17 +6,21 @@ import qualified Data.Traversable as Tr
 import qualified Data.Foldable as Fl
 import Control.Monad
 import Control.Applicative
+import qualified Text.Show.Pretty as Pr
 
 
 data Test = Test { desc  :: String
                  , value :: Int
-} 
+}
+
+instance Show Test where
+  show f = (desc f) ++ ": " ++ (show $ value f)
 
 
 data Data t = Data { foo :: t 
                    , bar :: t       
                    , baz :: t
-} deriving (Functor, Tr.Traversable, Fl.Foldable)
+} deriving (Functor, Tr.Traversable, Fl.Foldable, Show)
 
 
 exampleData = Data { foo = Test "Foo" 1 
@@ -24,31 +28,29 @@ exampleData = Data { foo = Test "Foo" 1
                    , baz = Test "Baz" 3
 } 
 
-instance Show Test where
-  show f = (desc f) ++ ": " ++ (show $ value f)
+
+test :: Monad m => Test -> m Int
+test f = return $ value f * 10
 
 
---instance Functor Data where
---  fmap = Tr.fmapDefault
+test2 :: Monad m => Test -> m Test
+test2 f = return $ f { value = x } where x = value f * 10
 
---instance Fl.Foldable Data where
---  foldMap = Tr.foldMapDefault
-
---instance Tr.Traversable Data where
---    traverse f (Data a a') = Data <$> f a <*> f a'
---  
---  traverse :: Applicative f => (a -> f b) -> t a -> f (t b)
---
-
-ms :: Test 
-ms x =  "lol"
 
 main :: IO()
 main = do
-  --putStrLn $ show exampleData
-  Tr.traverse print exampleData
-  Tr.traverse (ms) exampleData
 
--- OBJECTIVE:
--- Traverse exampleData, printing "foo" and "bar"
+  putStrLn . Pr.ppShow $ exampleData
 
+  d <- Tr.traverse test exampleData
+  putStrLn . Pr.ppShow $ d
+
+  d2 <- Tr.mapM test2 exampleData
+  putStrLn . Pr.ppShow $ d2
+
+  d3 <- Tr.traverse test2 exampleData
+  putStrLn . Pr.ppShow $ d3
+
+  Tr.mapM print exampleData
+  Tr.mapM print d3
+  return ()
