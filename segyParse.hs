@@ -25,27 +25,24 @@ import qualified Text.Show.Pretty as Pr
 import qualified Data.Traversable as T
 import qualified Data.Foldable as F
 
+data ByteLoc = ByteLoc 
+  { description :: String 
+  , startByte   :: Int
+  , endByte     :: Int
+  , value       :: Maybe Int
+  } 
 
--- Values from 400 Byte binary header
-data BinaryHeader = BinaryHeader { numTraces :: Int -- Bytes 3213 - 3214
-                 , numAuxTraces :: Int -- Bytes 3215 - 3216
-                 , sampleInterval :: Int -- Bytes: 3217 - 3218
-                 , numSamples :: Int -- Bytes: 3221 - 3222
-                 , sampleFormat :: Int -- Bytes: 3225 - 3226
-} deriving Show
-
-
-data BinaryHeader2 t = BinaryHeader2
+data BinaryHeader t = BinaryHeader
   { jobIdNum              :: t -- Bytes 3201 - 3204
   , lineNum               :: t -- Bytes 3205 - 3208
   , reelNum               :: t -- Bytes 3209 - 3212
   , numTracesEnsemble     :: t -- Bytes 3213 - 3214
   , numAuxTracesEnsemble  :: t -- Bytes 3215 - 3216
-  , sampleInterval2       :: t -- Bytes 3217 - 3218
+  , sampleInterval        :: t -- Bytes 3217 - 3218
   , sampleIntervalField   :: t -- Bytes 3219 - 3220
   , numSamplesTrace       :: t -- Bytes 3221 - 3222
   , numSamplesTraceField  :: t -- Bytes 3223 - 3224
-  , sampleFormat2         :: t -- Bytes 3225 - 3226
+  , sampleFormat          :: t -- Bytes 3225 - 3226
   , ensembleFold          :: t -- Bytes 3227 - 3228
   , traceSortingcode      :: t -- Bytes 3229 - 3230
   , vertSumCode           :: t -- Bytes 3231 - 3232
@@ -70,18 +67,19 @@ data BinaryHeader2 t = BinaryHeader2
   , unassigned02          :: t -- Bytes 3507 - 3600
   } deriving (Functor, T.Traversable, F.Foldable, Show)
 
-defaultBinaryHeader :: BinaryHeader2 ByteLoc
-defaultBinaryHeader = BinaryHeader2
+
+defaultBinaryHeader :: BinaryHeader ByteLoc
+defaultBinaryHeader = BinaryHeader
   { jobIdNum              = ByteLoc "Job identification number                                       "   3201 3204 Nothing
   , lineNum               = ByteLoc "Line number                                                     "   3205 3208 Nothing 
   , reelNum               = ByteLoc "Reel number                                                     "   3209 3212 Nothing 
   , numTracesEnsemble     = ByteLoc "Number of data traces per ensemble (mandatory pre-stack)        "   3213 3214 Nothing
   , numAuxTracesEnsemble  = ByteLoc "Numer of auxiliary traces per ensemble (mandatory pre-stack)    "   3215 3216 Nothing
-  , sampleInterval2       = ByteLoc "Sample interval in microseconds (mandatory)                     "   3217 3218 Nothing
+  , sampleInterval        = ByteLoc "Sample interval in microseconds (mandatory)                     "   3217 3218 Nothing
   , sampleIntervalField   = ByteLoc "Sample interval in microseconds of orignal field recording      "   3219 3220 Nothing
   , numSamplesTrace       = ByteLoc "Numer of samples per data trace (mandatory)                     "   3221 3222 Nothing
   , numSamplesTraceField  = ByteLoc "Numer of samples per data trace for original field recording    "   3223 3224 Nothing
-  , sampleFormat2         = ByteLoc "Data sample format (mandatory)                                  "   3225 3226 Nothing 
+  , sampleFormat          = ByteLoc "Data sample format (mandatory)                                  "   3225 3226 Nothing 
   , ensembleFold          = ByteLoc "Ensemble fold (mandatory)                                       "   3227 3228 Nothing
   , traceSortingcode      = ByteLoc "Trace sorting code (mandatory)                                  "   3229 3230 Nothing
   , vertSumCode           = ByteLoc "Vertical sum code                                               "   3231 3232 Nothing
@@ -106,21 +104,30 @@ defaultBinaryHeader = BinaryHeader2
   , unassigned02          = ByteLoc "Unassigned                                                      "   3507 3600 Nothing
   } 
 
+data TraceHeader t = TraceHeader 
+  { traceNumLine         :: t -- Bytes 1 - 4
+  , traceSeqNum          :: t -- Bytes 5 - 8
+  , origFieldRecordNum   :: t -- Bytes 9 - 12
+  } deriving (Functor, T.Traversable, F.Foldable, Show)
 
-data Trace = Trace { traceHeader :: TraceHeader
-           , dataPoints :: [Float]
-} deriving(Show)
+defaultTraceHeader :: TraceHeader ByteLoc
+defaultTraceHeader = TraceHeader 
+  { traceNumLine          = ByteLoc "Trace sequence number within line                               "  1 4  Nothing
+  , traceSeqNum           = ByteLoc "Trace sequence number within SEG Y file                         "  5 8  Nothing 
+  , origFieldRecordNum    = ByteLoc "Trace sequence number within SEG Y file                         "  9 12 Nothing 
+  }
+
+data Trace = Trace 
+  { traceHeader :: TraceHeader ByteLoc
+  , dataPoints :: [Float]
+  } deriving(Show)
 
 
-data Trace2 = Trace2 { traceHeader2 :: TraceHeader2 ByteLoc
-           , dataPoints2 :: [Float]
-} deriving(Show)
-
-
-data Output = Output { ebcdic :: [BL.ByteString]
-                     , binaryHeader :: BinaryHeader2 ByteLoc
-                     , trace :: [Trace2]
-} deriving Show
+data Output = Output 
+  { ebcdic :: [BL.ByteString]
+  , binaryHeader :: BinaryHeader ByteLoc
+  , trace :: [Trace]
+  } 
 
 
 getTextHeaderLine,getTextFileHeader :: Get BL.ByteString
@@ -130,38 +137,6 @@ getTextFileHeader = getLazyByteString 3200
 
 getTextHeader :: Get [BL.ByteString]
 getTextHeader = replicateM 40 getTextHeaderLine
-
--- In the segy standard all binary values are defined
--- as big-endian byte ordering.
-getWord16toIntegral :: Get Int
-getWord16toIntegral = getWord16be >>= return . fromIntegral -- Inject Num into the Get monadic type
-getWord32toIntegral :: Get Int
-getWord32toIntegral = getWord32be >>= return . fromIntegral -- Inject Num into the Get monadic type
-
-
-infixl 5 *>>
-(*>>) :: Applicative f => f a -> f b -> f b
-(*>>) = (*>)
-
-
-getBinHeader :: Get BinaryHeader
-getBinHeader = BinaryHeader <$> skip 12 
-                            *>> getWord16toIntegral -- numTraces
-                            <*> getWord16toIntegral -- numAuxTraces
-                            <*> getWord16toIntegral -- sampleInterval
-                            <*> skip 2
-                            *>> getWord16toIntegral -- numSamples
-                            <*> skip 2
-                            *>> getWord16toIntegral -- sampleFormat
-                            <*  skip (400-26)
-
-
-data ByteLoc = ByteLoc 
-  { description :: String 
-  , startByte   :: Int
-  , endByte     :: Int
-  , value       :: Maybe Int
-  } 
 
 
 getLocSizeStr :: Int -> Int -> String
@@ -181,99 +156,17 @@ instance Show ByteLoc where
                    end = endByte f
 
 
-data TraceHeader2 t = TraceHeader2 
-  { traceNumLine2         :: t -- Bytes 1 - 4
-  , traceSeqNum2          :: t -- Bytes 5 - 8
-  , origFieldRecordNum2   :: t -- Bytes 9 - 12
-  } deriving (Functor, T.Traversable, F.Foldable, Show)
-
-
-defaultTraceHeader :: TraceHeader2 ByteLoc
-defaultTraceHeader = TraceHeader2 
-  { traceNumLine2        = ByteLoc "Trace sequence number within line"             1 4  Nothing
-  , traceSeqNum2         = ByteLoc "Trace sequence number within SEG Y file"       5 8  Nothing 
-  , origFieldRecordNum2  = ByteLoc "Trace sequence number within SEG Y file"       9 12 Nothing 
-  }
-
-
--- Values from 240 Byte trace header
-data TraceHeader = TraceHeader { traceNumLine         :: Int -- Bytes 1 - 4
-                               , traceSeqNum          :: Int -- Bytes 5 - 8
-                               , origFieldRecordNum   :: Int -- Bytes 9 - 12
-                               , traceNumFieldRec     :: Int -- Bytes 13 - 16
-                               , energySourcePointNum :: Int -- Bytes 17 - 20
-                               , ensembleNum          :: Int -- Bytes 21 - 24
-                               , traceNumEnsemble     :: Int -- Bytes 25 - 28
-                               , traceIdCode          :: Int -- Bytes 29 - 30
-                               , numVertSumTraces     :: Int -- Bytes 31 - 32
-                               , numHorStackTraces    :: Int -- Bytes 33 - 34
-                               , datUse               :: Int -- Bytes 35 - 36
-                               , distSourcePoint      :: Int -- Bytes 37 - 40
-                               , receiverGrpElev      :: Int -- Bytes 41 - 44
-                               , surfElevSource       :: Int -- Bytes 45 - 48
-                               , sourceDepth          :: Int -- Bytes 49 - 52
-                               , datumElevReceiver    :: Int -- Bytes 53 - 56
-                               , datumElevSource      :: Int -- Bytes 57 - 60
-                               , waterDepthSource     :: Int -- Bytes 61 - 64
-                               , waterDepthGroup      :: Int -- Bytes 65 - 68
-                               , scalarDepths         :: Int -- Bytes 69 - 70
-                               , scalarCoords         :: Int -- Bytes 71 - 72
-                               , sourceCoordX         :: Int -- Bytes 73 - 76
-                               , sourceCoordY         :: Int -- Bytes 77 - 80
-                               , groupCoordX          :: Int -- Bytes 81 - 84
-                               , groupCoordY          :: Int -- Bytes 85 - 88
-                               , coordUnit            :: Int -- Bytes 89 - 90
-} deriving Show
-
-
-getTraceHeader2 :: ByteLoc -> Get ByteLoc
-getTraceHeader2 f = do
-    d <- getWord32toIntegral
-    return $ f { value = Just d } 
-
-
 getSegyBytes :: Int -> Get Int
 getSegyBytes x = case x of 
-      1 -> getWord16toIntegral
-      3 -> getWord32toIntegral
+      1 -> getWord16be >>= return . fromIntegral
+      3 -> getWord32be >>= return . fromIntegral
       _ -> skip x >> return (-1)
 
 
-getBinaryHeader2 :: ByteLoc -> Get ByteLoc
-getBinaryHeader2 f = do
+getHeader :: ByteLoc -> Get ByteLoc
+getHeader f = do
   d <- getSegyBytes $ endByte f - startByte f
   return $ f { value = Just d } 
-
-
-getTraceHeader :: Get TraceHeader
-getTraceHeader = TraceHeader <$> getWord32toIntegral -- traceNumLine
-                             <*> getWord32toIntegral -- traceSeqNumline
-                             <*> getWord32toIntegral -- origFieldRecordNum 
-                             <*> getWord32toIntegral -- traceNumFieldRec 
-                             <*> getWord32toIntegral -- energySourcePointNum
-                             <*> getWord32toIntegral -- ensembleNum
-                             <*> getWord32toIntegral -- traceNumEnsemble
-                             <*> getWord16toIntegral -- traceIdCode
-                             <*> getWord16toIntegral -- numVertSumTraces
-                             <*> getWord16toIntegral -- numHorStackTraces
-                             <*> getWord16toIntegral -- dataUse
-                             <*> getWord32toIntegral -- distSourcePoint
-                             <*> getWord32toIntegral -- receiverGrpElev
-                             <*> getWord32toIntegral -- surfElevSource
-                             <*> getWord32toIntegral -- sourceDepth
-                             <*> getWord32toIntegral -- datumElevReceiver
-                             <*> getWord32toIntegral -- datumElevSource
-                             <*> getWord32toIntegral -- waterDepthSource
-                             <*> getWord32toIntegral -- waterDepthGroup
-                             <*> getWord16toIntegral -- scalarDepths
-                             <*> getWord16toIntegral -- scalarCoords
-                             <*> getWord32toIntegral -- sourceCoordX
-                             <*> getWord32toIntegral -- sourceCoordY
-                             <*> getWord32toIntegral -- groupCoordX
-                             <*> getWord32toIntegral -- groupCoordY
-                             <*> getWord16toIntegral -- coordUnit
-                             <* skip (240 - 90)
-
 
 
 -- Convert IBM floating point to IEEE754 format, using only integer
@@ -315,28 +208,28 @@ getTraceData numSamples = do
     return $ val
 
 
-getTrace :: Int -> Int-> Get Trace2
+getTrace :: Int -> Int-> Get Trace
 getTrace numSamples sampleFormat = do
-  --    th <- getTraceHeader
-      th <- T.mapM getTraceHeader2 defaultTraceHeader
+      th <- T.mapM getHeader defaultTraceHeader
       x <- getTraceData numSamples 
       case sampleFormat of 
-        5 -> return $ Trace2 th $ wordToFloat <$> x
-        1 -> return $ Trace2 th $ wordToFloat . ibmToIeee754 <$> x
-        --_ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
-        _ -> return $ Trace2 th $ wordToFloat . ibmToIeee754 <$> x
+        5 -> return $ Trace th $ wordToFloat <$> x
+        1 -> return $ Trace th $ wordToFloat . ibmToIeee754 <$> x
+        _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
 
 getSEGY :: Get Output  
 getSEGY = do
-    header <- getTextHeader
-    bheader2 <- T.mapM getBinaryHeader2 defaultBinaryHeader
-    bheader <- getBinHeader
+    h <- getTextHeader
+    b <- T.mapM getHeader defaultBinaryHeader
+
+    let n = fromJust $ value (numSamplesTrace b) 
+    let f = fromJust $ value (sampleFormat b)
 
     trace <- forM [1 .. 100] $ \func -> do
-      getTrace (numSamples bheader) (sampleFormat bheader)
+      getTrace n f
 
-    return $ Output header bheader2 trace
+    return $ Output h b trace
 
 
 data Options = Options
@@ -382,21 +275,11 @@ compilerOpts argv =
       (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
 
 
-printEbcdic :: Output -> IO ()
-printEbcdic bs = BC.putStrLn $ BC.unlines (ebcdic bs)
 
 
-printBinaryHeader :: Output -> String
-printBinaryHeader output = Pr.ppShow (binaryHeader output)
-
-
-printTraceHeader trace = T.mapM print val
-                          where val = traceHeader2 trace
-
-
-printTraces num output = do
-  let traces = take num (trace output)
-  printTraceHeader <$> traces
+--printTraces num output = do
+--  let traces = take num (trace output)
+--  printTraceHeader <$> traces
 
 
 readSegyLazy :: FilePath -> IO BL.ByteString
@@ -409,7 +292,17 @@ readSegyLazy file = BL.readFile file
   --when (isJust $ optPrintTraces opts) $ printTraces num output
   --  where num = read (fromJust $ optPrintTraces opts) :: Int
 
+printEbcdic :: Output -> IO ()
+printEbcdic bs = BC.putStrLn $ BC.unlines (ebcdic bs)
 
+printBinaryHeader :: Output -> IO ()
+printBinaryHeader output = T.mapM print (binaryHeader output) >> return ()
+
+
+printTraceHeader :: Int -> Output -> IO()
+printTraceHeader n output = mapM_ (\oneTrace -> T.mapM print (traceHeader oneTrace)) traces
+                              where traces = take n $ trace output
+    
 main :: IO()
 main = do
   args <- getArgs
@@ -419,10 +312,10 @@ main = do
   streams <- mapM readSegyLazy strs
   let (x:xs) = runGet getSEGY <$> streams
 
-  T.mapM print (binaryHeader x)
+  printEbcdic x
+  printBinaryHeader x 
+  printTraceHeader 2 x
 
---  T.mapM print defaultTraceHeader
-  return ()
 
   --putStrLn . Pr.ppShow $ strs
   --putStrLn . Pr.ppShow $ opts
