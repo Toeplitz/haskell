@@ -63,10 +63,11 @@ data BinaryHeader2 t = BinaryHeader2
   , measurementSystem     :: t -- Bytes 3255 - 3256
   , impulseSigPolarity    :: t -- Bytes 3257 - 3258
   , vibPolarityCode       :: t -- Bytes 3259 - 3260
-  , unassigned            :: t -- Bytes 3261 - 3500
+  , unassigned01          :: t -- Bytes 3261 - 3500
   , segyFormatRevNum      :: t -- Bytes 3501 - 3502
   , fixedLenTraceFlag     :: t -- Bytes 3503 - 3504
   , numExtendHeaders      :: t -- Bytes 3505 - 3506
+  , unassigned02          :: t -- Bytes 3507 - 3600
   } deriving (Functor, T.Traversable, F.Foldable, Show)
 
 defaultBinaryHeader :: BinaryHeader2 ByteLoc
@@ -98,10 +99,11 @@ defaultBinaryHeader = BinaryHeader2
   , measurementSystem     = ByteLoc "Measurement system                                              "   3255 3256 Nothing
   , impulseSigPolarity    = ByteLoc "Impulse signal polarity                                         "   3257 3258 Nothing
   , vibPolarityCode       = ByteLoc "Vibratory polarity code                                         "   3259 3260 Nothing
-  , unassigned            = ByteLoc "Unassigned                                                      "   3261 3500 Nothing
+  , unassigned01          = ByteLoc "Unassigned                                                      "   3261 3500 Nothing
   , segyFormatRevNum      = ByteLoc "SEG Y Format Revision Number (mandatory)                        "   3501 3502 Nothing
   , fixedLenTraceFlag     = ByteLoc "Fixed length trace flag (mandatory)                             "   3503 3504 Nothing
   , numExtendHeaders      = ByteLoc "Numer of extended headers (mandatory)                           "   3505 3506 Nothing
+  , unassigned02          = ByteLoc "Unassigned                                                      "   3507 3600 Nothing
   } 
 
 
