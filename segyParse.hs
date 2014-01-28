@@ -32,9 +32,77 @@ data BinaryHeader = BinaryHeader { numTraces :: Int -- Bytes 3213 - 3214
                  , sampleInterval :: Int -- Bytes: 3217 - 3218
                  , numSamples :: Int -- Bytes: 3221 - 3222
                  , sampleFormat :: Int -- Bytes: 3225 - 3226
-} deriving(Show)
+} deriving Show
 
 
+data BinaryHeader2 t = BinaryHeader2
+  { jobIdNum              :: t -- Bytes 3201 - 3204
+  , lineNum               :: t -- Bytes 3205 - 3208
+  , reelNum               :: t -- Bytes 3209 - 3212
+  , numTracesEnsemble     :: t -- Bytes 3213 - 3214
+  , numAuxTracesEnsemble  :: t -- Bytes 3215 - 3216
+  , sampleInterval2       :: t -- Bytes 3217 - 3218
+  , sampleIntervalField   :: t -- Bytes 3219 - 3220
+  , numSamplesTrace       :: t -- Bytes 3221 - 3222
+  , numSamplesTraceField  :: t -- Bytes 3223 - 3224
+  , sampleFormat2         :: t -- Bytes 3225 - 3226
+  , ensembleFold          :: t -- Bytes 3227 - 3228
+  , traceSortingcode      :: t -- Bytes 3229 - 3230
+  , vertSumCode           :: t -- Bytes 3231 - 3232
+  , sweepFreqStart        :: t -- Bytes 3233 - 3234
+  , sweepFreqEnd          :: t -- Bytes 3235 - 3236
+  , sweepLength           :: t -- Bytes 3237 - 3238
+  , sweepTypeCode         :: t -- Bytes 3239 - 3240
+  , traceNumSweep         :: t -- Bytes 3241 - 3242
+  , sweepTaperStart       :: t -- Bytes 3243 - 3244
+  , sweepTapeEnd          :: t -- Bytes 3245 - 3246
+  , taperType             :: t -- Bytes 3247 - 3248
+  , corrDataTraces        :: t -- Bytes 3249 - 3250
+  , binaryGainRecovered   :: t -- Bytes 3251 - 3252
+  , ampRecoveryMethod     :: t -- Bytes 3253 - 3254
+  , measurementSystem     :: t -- Bytes 3255 - 3256
+  , impulseSigPolarity    :: t -- Bytes 3257 - 3258
+  , vibPolarityCode       :: t -- Bytes 3259 - 3260
+  , unassigned            :: t -- Bytes 3261 - 3500
+  , segyFormatRevNum      :: t -- Bytes 3501 - 3502
+  , fixedLenTraceFlag     :: t -- Bytes 3503 - 3504
+  , numExtendHeaders      :: t -- Bytes 3505 - 3506
+  } deriving (Functor, T.Traversable, F.Foldable, Show)
+
+defaultBinaryHeader :: BinaryHeader2 ByteLoc
+defaultBinaryHeader = BinaryHeader2
+  { jobIdNum              = ByteLoc "Job identification number                                       "   3201 3204 Nothing
+  , lineNum               = ByteLoc "Line number                                                     "   3205 3208 Nothing 
+  , reelNum               = ByteLoc "Reel number                                                     "   3209 3212 Nothing 
+  , numTracesEnsemble     = ByteLoc "Number of data traces per ensemble (mandatory pre-stack)        "   3213 3214 Nothing
+  , numAuxTracesEnsemble  = ByteLoc "Numer of auxiliary traces per ensemble (mandatory pre-stack)    "   3215 3216 Nothing
+  , sampleInterval2       = ByteLoc "Sample interval in microseconds (mandatory)                     "   3217 3218 Nothing
+  , sampleIntervalField   = ByteLoc "Sample interval in microseconds of orignal field recording      "   3219 3220 Nothing
+  , numSamplesTrace       = ByteLoc "Numer of samples per data trace (mandatory)                     "   3221 3222 Nothing
+  , numSamplesTraceField  = ByteLoc "Numer of samples per data trace for original field recording    "   3223 3224 Nothing
+  , sampleFormat2         = ByteLoc "Data sample format (mandatory)                                  "   3225 3226 Nothing 
+  , ensembleFold          = ByteLoc "Ensemble fold (mandatory)                                       "   3227 3228 Nothing
+  , traceSortingcode      = ByteLoc "Trace sorting code (mandatory)                                  "   3229 3230 Nothing
+  , vertSumCode           = ByteLoc "Vertical sum code                                               "   3231 3232 Nothing
+  , sweepFreqStart        = ByteLoc "Sweep frequency at start                                        "   3233 3234 Nothing
+  , sweepFreqEnd          = ByteLoc "Sweep frequency at end                                          "   3235 3236 Nothing
+  , sweepLength           = ByteLoc "Sweep length                                                    "   3237 3238 Nothing
+  , sweepTypeCode         = ByteLoc "Sweep type code                                                 "   3239 3240 Nothing
+  , traceNumSweep         = ByteLoc "Trace numer of sweep channel                                    "   3241 3242 Nothing
+  , sweepTaperStart       = ByteLoc "Sweep trace taper length at start if tapered                    "   3243 3244 Nothing
+  , sweepTapeEnd          = ByteLoc "Sweep trace taper length at end if tapered                      "   3245 3246 Nothing
+  , taperType             = ByteLoc "Taper type                                                      "   3247 3248 Nothing
+  , corrDataTraces        = ByteLoc "Correlated data traces                                          "   3249 3250 Nothing
+  , binaryGainRecovered   = ByteLoc "Binary gain recovered                                           "   3251 3252 Nothing
+  , ampRecoveryMethod     = ByteLoc "Amplitude recovery method (mandatory)                           "   3253 3254 Nothing
+  , measurementSystem     = ByteLoc "Measurement system                                              "   3255 3256 Nothing
+  , impulseSigPolarity    = ByteLoc "Impulse signal polarity                                         "   3257 3258 Nothing
+  , vibPolarityCode       = ByteLoc "Vibratory polarity code                                         "   3259 3260 Nothing
+  , unassigned            = ByteLoc "Unassigned                                                      "   3261 3500 Nothing
+  , segyFormatRevNum      = ByteLoc "SEG Y Format Revision Number (mandatory)                        "   3501 3502 Nothing
+  , fixedLenTraceFlag     = ByteLoc "Fixed length trace flag (mandatory)                             "   3503 3504 Nothing
+  , numExtendHeaders      = ByteLoc "Numer of extended headers (mandatory)                           "   3505 3506 Nothing
+  } 
 
 
 data Trace = Trace { traceHeader :: TraceHeader
@@ -48,7 +116,7 @@ data Trace2 = Trace2 { traceHeader2 :: TraceHeader2 ByteLoc
 
 
 data Output = Output { ebcdic :: [BL.ByteString]
-                     , binaryHeader :: BinaryHeader 
+                     , binaryHeader :: BinaryHeader2 ByteLoc
                      , trace :: [Trace2]
 } deriving Show
 
@@ -94,11 +162,21 @@ data ByteLoc = ByteLoc
   } 
 
 
+getLocSizeStr :: Int -> Int -> String
+getLocSizeStr x y = case x - y of
+                      3 -> " (Int32)"
+                      1 -> " (Int16)"
+                      _ -> " (unknown)"
+
+
 instance Show ByteLoc where
-    show f = (description f) ++ "\t:\t" ++ val
-               where val = case value f of
-                             Just x -> show x
-                             Nothing -> "not set"
+    show f = (description f) ++ ": " ++ val ++ "\t\tbytes: " ++ show start ++ " - " ++ show end ++ getLocSizeStr end start 
+               where 
+                   val = case value f of
+                           Just x -> show x
+                           Nothing -> "not set"
+                   start = startByte f
+                   end = endByte f
 
 
 data TraceHeader2 t = TraceHeader2 
@@ -150,6 +228,19 @@ getTraceHeader2 :: ByteLoc -> Get ByteLoc
 getTraceHeader2 f = do
     d <- getWord32toIntegral
     return $ f { value = Just d } 
+
+
+getSegyBytes :: Int -> Get Int
+getSegyBytes x = case x of 
+      1 -> getWord16toIntegral
+      3 -> getWord32toIntegral
+      _ -> skip x >> return (-1)
+
+
+getBinaryHeader2 :: ByteLoc -> Get ByteLoc
+getBinaryHeader2 f = do
+  d <- getSegyBytes $ endByte f - startByte f
+  return $ f { value = Just d } 
 
 
 getTraceHeader :: Get TraceHeader
@@ -230,18 +321,20 @@ getTrace numSamples sampleFormat = do
       case sampleFormat of 
         5 -> return $ Trace2 th $ wordToFloat <$> x
         1 -> return $ Trace2 th $ wordToFloat . ibmToIeee754 <$> x
-        _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
+        --_ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
+        _ -> return $ Trace2 th $ wordToFloat . ibmToIeee754 <$> x
 
 
 getSEGY :: Get Output  
 getSEGY = do
     header <- getTextHeader
+    bheader2 <- T.mapM getBinaryHeader2 defaultBinaryHeader
     bheader <- getBinHeader
 
     trace <- forM [1 .. 100] $ \func -> do
       getTrace (numSamples bheader) (sampleFormat bheader)
 
-    return $ Output header bheader trace
+    return $ Output header bheader2 trace
 
 
 data Options = Options
@@ -324,9 +417,9 @@ main = do
   streams <- mapM readSegyLazy strs
   let (x:xs) = runGet getSEGY <$> streams
 
-  print $ binaryHeader x
+  T.mapM print (binaryHeader x)
 
-  T.mapM print defaultTraceHeader
+--  T.mapM print defaultTraceHeader
   return ()
 
   --putStrLn . Pr.ppShow $ strs
