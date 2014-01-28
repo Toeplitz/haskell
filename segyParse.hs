@@ -105,16 +105,36 @@ defaultBinaryHeader = BinaryHeader
   } 
 
 data TraceHeader t = TraceHeader 
-  { traceNumLine         :: t -- Bytes 1 - 4
-  , traceSeqNum          :: t -- Bytes 5 - 8
-  , origFieldRecordNum   :: t -- Bytes 9 - 12
+  { traceNumLine         :: t -- Bytes 1  - 4
+  , traceSeqNum          :: t -- Bytes 5  - 8
+  , origFieldRecordNum   :: t -- Bytes 9  - 12
+  , traceNumFieldRec     :: t -- Bytes 13 - 16
+  , energySourcePointNum :: t -- Bytes 17 - 20
+  , ensembleNumber       :: t -- Bytes 21 - 24
+  , traceNumEnsemble     :: t -- Bytes 25 - 28
+  , traceIdCode          :: t -- Bytes 29 - 30
+  , numVertSumTraces     :: t -- Bytes 31 - 32
+  , numHorSumTraces      :: t -- Bytes 33 - 34
+  , dataUse              :: t -- Bytes 35 - 36
+  , distCenter           :: t -- Bytes 37 - 40
+  , unassigned           :: t
   } deriving (Functor, T.Traversable, F.Foldable, Show)
 
 defaultTraceHeader :: TraceHeader ByteLoc
 defaultTraceHeader = TraceHeader 
-  { traceNumLine          = ByteLoc "Trace sequence number within line                               "  1 4  Nothing
-  , traceSeqNum           = ByteLoc "Trace sequence number within SEG Y file                         "  5 8  Nothing 
-  , origFieldRecordNum    = ByteLoc "Trace sequence number within SEG Y file                         "  9 12 Nothing 
+  { traceNumLine          = ByteLoc "Trace sequence number within line (recommended)                 "  1  4  Nothing
+  , traceSeqNum           = ByteLoc "Trace sequence number within SEG Y file                         "  5  8  Nothing 
+  , origFieldRecordNum    = ByteLoc "Original field record number (recommended)                      "  9  12 Nothing 
+  , traceNumFieldRec      = ByteLoc "Trace number within original field record (recommended)         "  13 16 Nothing
+  , energySourcePointNum  = ByteLoc "Energy source point number                                      "  17 20 Nothing
+  , ensembleNumber        = ByteLoc "Ensemble number                                                 "  21 24 Nothing
+  , traceNumEnsemble      = ByteLoc "Trace number within the ensemble                                "  25 28 Nothing
+  , traceIdCode           = ByteLoc "Trace identification code                                       "  29 30 Nothing
+  , numVertSumTraces      = ByteLoc "Number of vertically summed traces yielding this trace          "  31 32 Nothing
+  , numHorSumTraces       = ByteLoc "Number of horizontally stacked traces yielding this trace       "  33 34 Nothing
+  , dataUse               = ByteLoc "Data use                                                        "  35 36 Nothing
+  , distCenter            = ByteLoc "Distance from center of the source point to the receiver group  "  37 40 Nothing
+  , unassigned            = ByteLoc "....                                                            "  41 240 Nothing
   }
 
 data Trace = Trace 
@@ -160,7 +180,7 @@ getSegyBytes :: Int -> Get Int
 getSegyBytes x = case x of 
       1 -> getWord16be >>= return . fromIntegral
       3 -> getWord32be >>= return . fromIntegral
-      _ -> skip x >> return (-1)
+      _ -> skip  (x + 1) >> return (-1)
 
 
 getHeader :: ByteLoc -> Get ByteLoc
@@ -203,19 +223,18 @@ ibmToIeee754 from
 
 getTraceData :: Int -> Get [Word32]
 getTraceData numSamples = do
-    val <- forM [1 .. numSamples] $ \func -> do
-      getWord32be
+    val <- forM [1 .. numSamples] $ \func -> do getWord32be
     return $ val
 
 
-getTrace :: Int -> Int-> Get Trace
+getTrace :: Int -> Int -> Get Trace
 getTrace numSamples sampleFormat = do
-      th <- T.mapM getHeader defaultTraceHeader
-      x <- getTraceData numSamples 
-      case sampleFormat of 
-        5 -> return $ Trace th $ wordToFloat <$> x
-        1 -> return $ Trace th $ wordToFloat . ibmToIeee754 <$> x
-        _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
+    th <- T.mapM getHeader defaultTraceHeader
+    samples <- getTraceData numSamples 
+    case sampleFormat of 
+      5 -> return $ (Trace th $ wordToFloat <$> samples)
+      1 -> return $ (Trace th $ wordToFloat . ibmToIeee754 <$> samples)
+      _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
 
 getSEGY :: Get Output  
@@ -226,10 +245,35 @@ getSEGY = do
     let n = fromJust $ value (numSamplesTrace b) 
     let f = fromJust $ value (sampleFormat b)
 
-    trace <- forM [1 .. 100] $ \func -> do
-      getTrace n f
+    trace <- forM [1 .. 10] $ \func -> getTrace n f
 
     return $ Output h b trace
+
+
+readSegyLazy :: FilePath -> IO BL.ByteString
+readSegyLazy file = BL.readFile file
+
+printEbcdic :: Output -> IO ()
+printEbcdic output = BC.putStrLn $ BC.unlines (ebcdic output)
+
+printBinaryHeader :: Output -> IO ()
+printBinaryHeader output = T.mapM print (binaryHeader output) >> return ()
+
+
+printOneTrace :: Trace -> IO ()
+printOneTrace trace = do
+    let vec = dataPoints trace
+    let vecMin = show $ minimum vec
+    let vecMax = show $ maximum vec
+    putStrLn $ "\nTrace summary, min/max " ++ vecMin ++ "/" ++ vecMax ++ " m/s"
+    putStrLn . Pr.ppShow $ take 10 vec
+    T.mapM print (traceHeader trace) >> return ()
+
+
+printTraces :: Int -> Output -> IO()
+printTraces n output = do
+    let traces = take n $ trace output
+    mapM_ printOneTrace traces
 
 
 data Options = Options
@@ -275,33 +319,12 @@ compilerOpts argv =
       (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
 
 
-
-
---printTraces num output = do
---  let traces = take num (trace output)
---  printTraceHeader <$> traces
-
-
-readSegyLazy :: FilePath -> IO BL.ByteString
-readSegyLazy file = BL.readFile file
-
-
 --parseFile opts output = printBinaryHeader output
 --  when (optPrintEbcdic opts) $ printEbcdic output
   --when (optPrintBinary opts) $ 
   --when (isJust $ optPrintTraces opts) $ printTraces num output
   --  where num = read (fromJust $ optPrintTraces opts) :: Int
 
-printEbcdic :: Output -> IO ()
-printEbcdic bs = BC.putStrLn $ BC.unlines (ebcdic bs)
-
-printBinaryHeader :: Output -> IO ()
-printBinaryHeader output = T.mapM print (binaryHeader output) >> return ()
-
-
-printTraceHeader :: Int -> Output -> IO()
-printTraceHeader n output = mapM_ (\oneTrace -> T.mapM print (traceHeader oneTrace)) traces
-                              where traces = take n $ trace output
     
 main :: IO()
 main = do
@@ -314,7 +337,7 @@ main = do
 
   printEbcdic x
   printBinaryHeader x 
-  printTraceHeader 2 x
+  printTraces 3 x
 
 
   --putStrLn . Pr.ppShow $ strs
