@@ -117,24 +117,58 @@ data TraceHeader t = TraceHeader
   , numHorSumTraces      :: t -- Bytes 33 - 34
   , dataUse              :: t -- Bytes 35 - 36
   , distCenter           :: t -- Bytes 37 - 40
-  , unassigned           :: t
+  , receiverGroupElev    :: t -- Bytes 41 - 44
+  , surfaceElevSource    :: t -- Bytes 45 - 48
+  , sourceDepthSurface   :: t -- Bytes 49 - 52
+  , datumElevReceiver    :: t -- Bytes 53 - 56
+  , datumElevSource      :: t -- Bytes 57 - 60
+  , waterDepthSource     :: t -- Bytes 61 - 64
+  , waterDepthReceiver   :: t -- Bytes 65 - 68
+  , scalarElev           :: t -- Bytes 69 - 70
+  , scalarCoord          :: t -- Bytes 71 - 72
+  , sourceCoordX         :: t -- Bytes 73 - 76
+  , sourceCoordY         :: t -- Bytes 77 - 80
+  , groupCoordX          :: t -- Bytes 81 - 84
+  , groupCoordY          :: t -- Bytes 85 - 88
+  , coordUnits           :: t -- Bytes 89 - 90
+  , unassigned03         :: t
+  , nSamplesTraceHeader  :: t -- Bytes 115 - 116
+  , sampleIntervalTrace  :: t -- Bytes 117 - 118
+  , unassigned04         :: t
   } deriving (Functor, T.Traversable, F.Foldable, Show)
 
 defaultTraceHeader :: TraceHeader ByteLoc
 defaultTraceHeader = TraceHeader 
-  { traceNumLine          = ByteLoc "Trace sequence number within line (recommended)                 "  1  4  Nothing
-  , traceSeqNum           = ByteLoc "Trace sequence number within SEG Y file                         "  5  8  Nothing 
-  , origFieldRecordNum    = ByteLoc "Original field record number (recommended)                      "  9  12 Nothing 
-  , traceNumFieldRec      = ByteLoc "Trace number within original field record (recommended)         "  13 16 Nothing
-  , energySourcePointNum  = ByteLoc "Energy source point number                                      "  17 20 Nothing
-  , ensembleNumber        = ByteLoc "Ensemble number                                                 "  21 24 Nothing
-  , traceNumEnsemble      = ByteLoc "Trace number within the ensemble                                "  25 28 Nothing
-  , traceIdCode           = ByteLoc "Trace identification code                                       "  29 30 Nothing
-  , numVertSumTraces      = ByteLoc "Number of vertically summed traces yielding this trace          "  31 32 Nothing
-  , numHorSumTraces       = ByteLoc "Number of horizontally stacked traces yielding this trace       "  33 34 Nothing
-  , dataUse               = ByteLoc "Data use                                                        "  35 36 Nothing
-  , distCenter            = ByteLoc "Distance from center of the source point to the receiver group  "  37 40 Nothing
-  , unassigned            = ByteLoc "....                                                            "  41 240 Nothing
+  { traceNumLine          = ByteLoc "Trace sequence number within line (recommended)                 "  1   4   Nothing
+  , traceSeqNum           = ByteLoc "Trace sequence number within SEG Y file                         "  5   8   Nothing 
+  , origFieldRecordNum    = ByteLoc "Original field record number (recommended)                      "  9   12  Nothing 
+  , traceNumFieldRec      = ByteLoc "Trace number within original field record (recommended)         "  13  16  Nothing
+  , energySourcePointNum  = ByteLoc "Energy source point number                                      "  17  20  Nothing
+  , ensembleNumber        = ByteLoc "Ensemble number                                                 "  21  24  Nothing
+  , traceNumEnsemble      = ByteLoc "Trace number within the ensemble                                "  25  28  Nothing
+  , traceIdCode           = ByteLoc "Trace identification code                                       "  29  30  Nothing
+  , numVertSumTraces      = ByteLoc "Number of vertically summed traces yielding this trace          "  31  32  Nothing
+  , numHorSumTraces       = ByteLoc "Number of horizontally stacked traces yielding this trace       "  33  34  Nothing
+  , dataUse               = ByteLoc "Data use                                                        "  35  36  Nothing
+  , distCenter            = ByteLoc "Distance from center of the source point to the receiver group  "  37  40  Nothing
+  , receiverGroupElev     = ByteLoc "Receiver group elevation                                        "  41  44  Nothing
+  , surfaceElevSource     = ByteLoc "Surface elevation at source                                     "  45  48  Nothing
+  , sourceDepthSurface    = ByteLoc "Source depth below surface                                      "  49  52  Nothing
+  , datumElevReceiver     = ByteLoc "Datum elevation at receiver group                               "  53  56  Nothing
+  , datumElevSource       = ByteLoc "Datum elevation at source                                       "  57  60  Nothing
+  , waterDepthSource      = ByteLoc "Water depth at source                                           "  61  64  Nothing
+  , waterDepthReceiver    = ByteLoc "Water depth at group                                            "  65  68  Nothing
+  , scalarElev            = ByteLoc "Scalar to be applied to all elevations and depths               "  69  70  Nothing
+  , scalarCoord           = ByteLoc "Scalar to be applied to all coordinates                         "  71  72  Nothing
+  , sourceCoordX          = ByteLoc "Source coordinate X                                             "  73  76  Nothing
+  , sourceCoordY          = ByteLoc "Source coordinate Y                                             "  77  80  Nothing
+  , groupCoordX           = ByteLoc "Group coordinate X                                              "  81  84  Nothing
+  , groupCoordY           = ByteLoc "Group coordinate Y                                              "  85  88  Nothing
+  , coordUnits            = ByteLoc "Coordinate units                                                "  89  90  Nothing 
+  , unassigned03          = ByteLoc "....                                                            "  91  114 Nothing
+  , nSamplesTraceHeader   = ByteLoc "Number of samples in this trace                                 "  115 116 Nothing
+  , sampleIntervalTrace   = ByteLoc "Sample interval for this trace                                  "  117 118 Nothing
+  , unassigned04          = ByteLoc "...                                                             "  119 240 Nothing
   }
 
 data Trace = Trace 
@@ -167,7 +201,7 @@ getLocSizeStr x y = case x - y of
 
 
 instance Show ByteLoc where
-    show f = (description f) ++ ": " ++ val ++ "\t\tbytes: " ++ show start ++ " - " ++ show end ++ getLocSizeStr end start 
+    show f = (description f) ++ ": " ++ val ++ "\t\t\tbytes: " ++ show start ++ " - " ++ show end ++ getLocSizeStr end start 
                where 
                    val = case value f of
                            Just x -> show x
@@ -245,7 +279,7 @@ getSEGY = do
     let n = fromJust $ value (numSamplesTrace b) 
     let f = fromJust $ value (sampleFormat b)
 
-    trace <- forM [1 .. 10] $ \func -> getTrace n f
+    trace <- forM [1 .. 5000] $ \func -> getTrace n f
 
     return $ Output h b trace
 
