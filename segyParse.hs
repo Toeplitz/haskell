@@ -4,7 +4,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveFoldable #-}
 
-import qualified Data.Text.ICU.Convert as C
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.UTF8 as BU
@@ -201,13 +200,13 @@ getLocSizeStr x y = case x - y of
 
 
 instance Show ByteLoc where
-    show f = (description f) ++ ": " ++ val ++ "\t\t\tbytes: " ++ show start ++ " - " ++ show end ++ getLocSizeStr end start 
-               where 
-                   val = case value f of
-                           Just x -> show x
-                           Nothing -> "not set"
-                   start = startByte f
-                   end = endByte f
+  show f = (description f) ++ ": " ++ val ++ "\t\t\tbytes: " ++ show start ++ " - " ++ show end ++ getLocSizeStr end start 
+           where 
+             val = case value f of
+                     Just x -> show x
+                     Nothing -> "not set"
+             start = startByte f
+             end = endByte f
 
 
 getSegyBytes :: Int -> Get Int
@@ -270,6 +269,7 @@ getTrace numSamples sampleFormat = do
       1 -> return $ (Trace th $ wordToFloat . ibmToIeee754 <$> samples)
       _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
+
 getAllTraces :: Int -> Int -> Get [Trace]
 getAllTraces n f = do
     empty <- isEmpty
@@ -280,16 +280,15 @@ getAllTraces n f = do
       rest <- getAllTraces n f
       return (t:rest)
 
+
 getSEGY :: Get Output  
 getSEGY = do
     h <- getTextHeader
     b <- T.mapM getHeader defaultBinaryHeader
-
     let n = fromJust $ value (numSamplesTrace b) 
     let f = fromJust $ value (sampleFormat b)
+    t <- getAllTraces n f 
 
-    --trace <- forM [1 .. 5000] $ \func -> getTrace n f
-    t <- getAllTraces n f
 
     return $ Output h b t 
 
@@ -358,9 +357,9 @@ header =  "Usage: segyParse.hs [OPTION...] files..."
 
 compilerOpts :: [String] -> IO (Options, [String])
 compilerOpts argv =
-   case getOpt Permute options argv of
-      (o,n,[]  ) -> return (foldl (flip id) defaultOptions o, n)
-      (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
+  case getOpt Permute options argv of
+    (o,n,[]  ) -> return (foldl (flip id) defaultOptions o, n)
+    (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
 
 
 --parseFile opts output = printBinaryHeader output
@@ -369,6 +368,12 @@ compilerOpts argv =
   --when (isJust $ optPrintTraces opts) $ printTraces num output
   --  where num = read (fromJust $ optPrintTraces opts) :: Int
 
+printSummary :: Output -> IO ()
+printSummary output = do
+    putStrLn "\nSummary:"
+    putStrLn $ "Parsed "++ len ++ " traces"
+  where 
+    len = show $ length (traces output)
     
 main :: IO()
 main = do
@@ -381,8 +386,8 @@ main = do
 
   printEbcdic x
   printBinaryHeader x 
---  putStrLn "Parsed: "++ (show $ length (trace x)) ++ " traces"
-  printTraces 300 x
+  printTraces 2  x
+  printSummary x
 
 
   --putStrLn . Pr.ppShow $ strs
