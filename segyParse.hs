@@ -180,7 +180,7 @@ data Trace = Trace
 data Output = Output 
   { ebcdic :: [BL.ByteString]
   , binaryHeader :: BinaryHeader ByteLoc
-  , trace :: [Trace]
+  , traces :: [Trace]
   } 
 
 
@@ -270,6 +270,15 @@ getTrace numSamples sampleFormat = do
       1 -> return $ (Trace th $ wordToFloat . ibmToIeee754 <$> samples)
       _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
+getAllTraces :: Int -> Int -> Get [Trace]
+getAllTraces n f = do
+    empty <- isEmpty
+    if empty
+      then return []
+    else do
+      t <- getTrace n f
+      rest <- getAllTraces n f
+      return (t:rest)
 
 getSEGY :: Get Output  
 getSEGY = do
@@ -279,9 +288,10 @@ getSEGY = do
     let n = fromJust $ value (numSamplesTrace b) 
     let f = fromJust $ value (sampleFormat b)
 
-    trace <- forM [1 .. 5000] $ \func -> getTrace n f
+    --trace <- forM [1 .. 5000] $ \func -> getTrace n f
+    t <- getAllTraces n f
 
-    return $ Output h b trace
+    return $ Output h b t 
 
 
 readSegyLazy :: FilePath -> IO BL.ByteString
@@ -306,8 +316,8 @@ printOneTrace trace = do
 
 printTraces :: Int -> Output -> IO()
 printTraces n output = do
-    let traces = take n $ trace output
-    mapM_ printOneTrace traces
+    let t = take n $ traces output
+    mapM_ printOneTrace t
 
 
 data Options = Options
@@ -371,7 +381,8 @@ main = do
 
   printEbcdic x
   printBinaryHeader x 
-  printTraces 3 x
+--  putStrLn "Parsed: "++ (show $ length (trace x)) ++ " traces"
+  printTraces 300 x
 
 
   --putStrLn . Pr.ppShow $ strs
