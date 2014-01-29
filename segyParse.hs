@@ -1,28 +1,25 @@
 {-# OPTIONS -XBangPatterns -fno-warn-unused-binds -fno-warn-unused-matches -fno-warn-unused-imports -fno-warn-type-defaults #-}
-
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveFoldable #-}
 
-import qualified Data.ByteString as B
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.UTF8 as BU
-import Data.Bits
-import Data.Binary.Get
-import Data.Binary.IEEE754
-import Data.Int
+import Codec.Text.IConv (convert)
 import Control.Monad
 import Control.Applicative
-import Codec.Text.IConv
-import qualified Data.ByteString.Lazy.Char8 as BC
-import Data.Word
+import Data.Bits
+import Data.Binary.Get
+import Data.Binary.IEEE754 (wordToFloat)
+import Data.Int (Int32)
+import Data.Maybe (fromMaybe, fromJust, isJust)
+import Data.Word (Word32)
 import System.Environment
 import System.Console.GetOpt
-import Data.Maybe (fromMaybe, fromJust, isJust)
 
-import qualified Text.Show.Pretty as Pr
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Lazy.Char8 as BC
 import qualified Data.Traversable as T
 import qualified Data.Foldable as F
+import qualified Text.Show.Pretty as Pr
 
 data ByteLoc = ByteLoc 
   { description :: String 
