@@ -14,6 +14,7 @@ import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.Word (Word32)
 import System.Environment
 import System.Console.GetOpt
+import System.IO
 
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
@@ -179,22 +180,18 @@ data Output = Output
   , traces :: [Trace]
   } 
 
-
 getTextHeaderLine,getTextFileHeader :: Get BL.ByteString
 getTextHeaderLine = convert "IBM1047" "UTF8" <$> getLazyByteString 80
 getTextFileHeader = getLazyByteString 3200
 
-
 getTextHeader :: Get [BL.ByteString]
 getTextHeader = replicateM 40 getTextHeaderLine
-
 
 getLocSizeStr :: Int -> Int -> String
 getLocSizeStr x y = case x - y of
                       3 -> " (Int32)"
                       1 -> " (Int16)"
                       _ -> " (unknown)"
-
 
 instance Show ByteLoc where
   show f = (description f) ++ ": " ++ val ++ "\t\t\tbytes: " ++ show start ++ " - " ++ show end ++ getLocSizeStr end start 
@@ -205,19 +202,16 @@ instance Show ByteLoc where
              start = startByte f
              end = endByte f
 
-
 getSegyBytes :: Int -> Get Int
 getSegyBytes x = case x of 
       1 -> getWord16be >>= return . fromIntegral
       3 -> getWord32be >>= return . fromIntegral
       _ -> skip  (x + 1) >> return (-1)
 
-
 getHeader :: ByteLoc -> Get ByteLoc
 getHeader f = do
   d <- getSegyBytes $ endByte f - startByte f
   return $ f { value = Just d } 
-
 
 -- Convert IBM floating point to IEEE754 format, using only integer
 -- bit shifting operations. Endianness is assumed to already have been
@@ -249,13 +243,10 @@ ibmToIeee754 from
         !fmant' = fmant `unsafeShiftL` 1
         !t'     = t - 1
 
-
-
 getTraceData :: Int -> Get [Word32]
 getTraceData numSamples = do
     val <- forM [1 .. numSamples] $ \func -> do getWord32be
     return $ val
-
 
 getTrace :: Int -> Int -> Get Trace
 getTrace numSamples sampleFormat = do
@@ -265,7 +256,6 @@ getTrace numSamples sampleFormat = do
       5 -> return $ (Trace th $ wordToFloat <$> samples)
       1 -> return $ (Trace th $ wordToFloat . ibmToIeee754 <$> samples)
       _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
-
 
 getAllTraces :: Int -> Int -> Get [Trace]
 getAllTraces n f = do
@@ -277,7 +267,6 @@ getAllTraces n f = do
       rest <- getAllTraces n f
       return (t:rest)
 
-
 getSEGY :: Get Output  
 getSEGY = do
     h <- getTextHeader
@@ -285,20 +274,16 @@ getSEGY = do
     let n = fromJust $ value (numSamplesTrace b) 
     let f = fromJust $ value (sampleFormat b)
     t <- getAllTraces n f 
-
-
     return $ Output h b t 
 
-
 readSegyLazy :: FilePath -> IO BL.ByteString
-readSegyLazy file = BL.readFile file
+readSegyLazy file = openFile file ReadMode >>= BL.hGetContents handle
 
 printEbcdic :: Output -> IO ()
 printEbcdic output = BC.putStrLn $ BC.unlines (ebcdic output)
 
 printBinaryHeader :: Output -> IO ()
 printBinaryHeader output = T.mapM print (binaryHeader output) >> return ()
-
 
 printOneTrace :: Trace -> IO ()
 printOneTrace trace = do
@@ -309,12 +294,10 @@ printOneTrace trace = do
     putStrLn . Pr.ppShow $ take 10 vec
     T.mapM print (traceHeader trace) >> return ()
 
-
 printTraces :: Int -> Output -> IO()
 printTraces n output = do
     let t = take n $ traces output
     mapM_ printOneTrace t
-
 
 data Options = Options
  { optShowVersion :: Bool
@@ -323,14 +306,12 @@ data Options = Options
  , optPrintTraces :: Maybe String
  } deriving Show
 
-
 defaultOptions    = Options
  { optShowVersion = False
  , optPrintEbcdic = False
  , optPrintBinary = False
  , optPrintTraces = Nothing
  }
-
 
 options :: [OptDescr (Options -> Options)]
 options =
@@ -351,13 +332,11 @@ options =
 header :: String
 header =  "Usage: segyParse.hs [OPTION...] files..."
 
-
 compilerOpts :: [String] -> IO (Options, [String])
 compilerOpts argv =
   case getOpt Permute options argv of
     (o,n,[]  ) -> return (foldl (flip id) defaultOptions o, n)
     (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
-
 
 --parseFile opts output = printBinaryHeader output
 --  when (optPrintEbcdic opts) $ printEbcdic output
@@ -371,7 +350,17 @@ printSummary output = do
     putStrLn $ "Parsed "++ len ++ " traces"
   where 
     len = show $ length (traces output)
-    
+
+printTrace' :: Monad m => (a -> m b) -> BinaryHeader -> BL.ByteString -> m ()
+printTrace' func b stream = do
+    let n = fromJust $ value (numSamplesTrace b) 
+    let f = fromJust $ value (sampleFormat b)
+    t <- getTrace n f
+    func t
+
+
+
+
 main :: IO()
 main = do
   args <- getArgs
@@ -383,8 +372,8 @@ main = do
 
   printEbcdic x
   printBinaryHeader x 
-  printTraces 2  x
-  printSummary x
+  --printTraces 2  x
+  --printSummary x
 
 
   --putStrLn . Pr.ppShow $ strs
