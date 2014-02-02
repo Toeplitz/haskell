@@ -101,6 +101,13 @@ defaultBinaryHeader = BinaryHeader
   , unassigned02          = ByteLoc "Unassigned                                                      "   3507 3600 Nothing
   } 
 
+
+data TraceHeaderEssential t = TraceHeaderEssential
+  { traceNumLine         :: t -- Bytes 1  - 4
+  , traceSeqNum          :: t -- Bytes 5  - 8
+  }
+
+
 data TraceHeader t = TraceHeader 
   { traceNumLine         :: t -- Bytes 1  - 4
   , traceSeqNum          :: t -- Bytes 5  - 8
@@ -277,7 +284,9 @@ getSEGY = do
     return $ Output h b t 
 
 readSegyLazy :: FilePath -> IO BL.ByteString
-readSegyLazy file = openFile file ReadMode >>= BL.hGetContents handle
+readSegyLazy file = do
+    handle <- openFile file ReadMode
+    BL.hGetContents handle
 
 printEbcdic :: Output -> IO ()
 printEbcdic output = BC.putStrLn $ BC.unlines (ebcdic output)
@@ -351,12 +360,12 @@ printSummary output = do
   where 
     len = show $ length (traces output)
 
-printTrace' :: Monad m => (a -> m b) -> BinaryHeader -> BL.ByteString -> m ()
-printTrace' func b stream = do
-    let n = fromJust $ value (numSamplesTrace b) 
-    let f = fromJust $ value (sampleFormat b)
-    t <- getTrace n f
-    func t
+--printTrace' :: Monad m => (a -> m b) -> BinaryHeader -> BL.ByteString -> m ()
+--printTrace' func b stream = do
+--    let n = fromJust $ value (numSamplesTrace b) 
+--    let f = fromJust $ value (sampleFormat b)
+--    t <- getTrace n f
+--    func t
 
 
 
@@ -372,8 +381,8 @@ main = do
 
   printEbcdic x
   printBinaryHeader x 
-  --printTraces 2  x
-  --printSummary x
+  printTraces 2  x
+  printSummary x
 
 
   --putStrLn . Pr.ppShow $ strs
