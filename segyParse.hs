@@ -22,6 +22,12 @@ import qualified Data.Traversable as T
 import qualified Data.Foldable as F
 import qualified Text.Show.Pretty as Pr
 
+data SegySummary = SegySummary 
+  { totalTraces   :: Int
+  , minSample     :: Float
+  } 
+
+
 data ByteLoc = ByteLoc 
   { description :: String 
   , startByte   :: Int
@@ -103,8 +109,8 @@ defaultBinaryHeader = BinaryHeader
 
 
 data TraceHeaderEssential t = TraceHeaderEssential
-  { traceNumLine         :: t -- Bytes 1  - 4
-  , traceSeqNum          :: t -- Bytes 5  - 8
+  { traceNumLine2         :: t -- Bytes 1  - 4
+  , traceSeqNum2          :: t -- Bytes 5  - 8
   }
 
 
@@ -274,13 +280,26 @@ getAllTraces n f = do
       rest <- getAllTraces n f
       return (t:rest)
 
+getSummary :: Int -> Int -> Get SegySummary
+getSummary n f = do
+    empty <- isEmpty
+    if empty
+      then return $ SegySummary 0 0
+    else do
+      t <- getTrace n f
+      rest <- getAllTraces n f
+      return $ SegySummary 0 0.1
+      
+
+
 getSEGY :: Get Output  
 getSEGY = do
     h <- getTextHeader
     b <- T.mapM getHeader defaultBinaryHeader
     let n = fromJust $ value (numSamplesTrace b) 
     let f = fromJust $ value (sampleFormat b)
-    t <- getAllTraces n f 
+    t <- forM [1 .. 10] $ \func -> do getTrace n f
+    --t <- getAllTraces n f 
     return $ Output h b t 
 
 readSegyLazy :: FilePath -> IO BL.ByteString
@@ -381,7 +400,8 @@ main = do
 
   printEbcdic x
   printBinaryHeader x 
-  printTraces 2  x
+
+  printTraces 2 x
   printSummary x
 
 
