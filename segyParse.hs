@@ -9,6 +9,7 @@ import Control.Applicative
 import Data.Bits
 import Data.Binary.Get
 import Data.Binary.IEEE754 (wordToFloat)
+import Data.List
 import Data.Int (Int32)
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.Word (Word32)
@@ -310,6 +311,8 @@ readSegyLazy file = do
 printEbcdic :: Output -> IO ()
 printEbcdic output = BC.putStrLn $ BC.unlines (ebcdic output)
 
+printEbcdic' d = BC.putStrLn $ BC.unlines d
+
 printBinaryHeader :: Output -> IO ()
 printBinaryHeader output = T.mapM print (binaryHeader output) >> return ()
 
@@ -386,7 +389,21 @@ printSummary output = do
 --    t <- getTrace n f
 --    func t
 
+--getTrace' :: Int -> Int -> Get a
+getTrace' numSamples sampleFormat = do
+    th <- T.mapM getHeader defaultTraceHeader
+    samples <- getTraceData numSamples 
+    case sampleFormat of 
+      5 -> return $ (Trace th $ wordToFloat <$> samples)
+      1 -> return $ (Trace th $ wordToFloat . ibmToIeee754 <$> samples)
+      _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
+--getTraces' :: (a -> b) -> BL.ByteString -> [a]
+getTraces' f input
+   | BL.null input = []
+   | otherwise =
+      let (trace, rest, _) = runGetState f input 0
+      in trace : getTraces' f rest
 
 
 main :: IO()
@@ -403,6 +420,12 @@ main = do
 
   printTraces 2 x
   printSummary x
+  let ebcdic' = getTraces' getTextHeader <$> streams
+  printEbcdic' $ head (head ebcdic')
+
+  let (x':xs') = getTraces' (getTrace' 201 1) <$> streams
+
+  return ()
 
 
   --putStrLn . Pr.ppShow $ strs
