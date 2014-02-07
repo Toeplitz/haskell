@@ -23,11 +23,6 @@ import qualified Data.Traversable as T
 import qualified Data.Foldable as F
 import qualified Text.Show.Pretty as Pr
 
-data SegySummary = SegySummary 
-  { totalTraces   :: Int
-  , minSample     :: Float
-  } 
-
 
 data ByteLoc = ByteLoc 
   { description :: String 
@@ -35,6 +30,7 @@ data ByteLoc = ByteLoc
   , endByte     :: Int
   , value       :: Maybe Int
   } 
+
 
 data BinaryHeader t = BinaryHeader
   { jobIdNum              :: t -- Bytes 3201 - 3204
@@ -108,11 +104,6 @@ defaultBinaryHeader = BinaryHeader
   , unassigned02          = ByteLoc "Unassigned                                                      "   3507 3600 Nothing
   } 
 
-
-data TraceHeaderEssential t = TraceHeaderEssential
-  { traceNumLine2         :: t -- Bytes 1  - 4
-  , traceSeqNum2          :: t -- Bytes 5  - 8
-  }
 
 
 data TraceHeader t = TraceHeader 
@@ -191,7 +182,6 @@ data Trace = Trace
 data Output = Output 
   { ebcdic :: [BL.ByteString]
   , binaryHeader :: BinaryHeader ByteLoc
---  , traces :: [Trace]
   } 
 
 getTextHeaderLine,getTextFileHeader :: Get BL.ByteString
@@ -262,37 +252,6 @@ getTraceData numSamples = do
     val <- forM [1 .. numSamples] $ \func -> do getWord32be
     return $ val
 
-getTrace :: Int -> Int -> Get Trace
-getTrace numSamples sampleFormat = do
-    th <- T.mapM getHeader defaultTraceHeader
-    samples <- getTraceData numSamples 
-    case sampleFormat of 
-      5 -> return $ (Trace th $ wordToFloat <$> samples)
-      1 -> return $ (Trace th $ wordToFloat . ibmToIeee754 <$> samples)
-      _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
-
-getAllTraces :: Int -> Int -> Get [Trace]
-getAllTraces n f = do
-    empty <- isEmpty
-    if empty
-      then return []
-    else do
-      t <- getTrace n f
-      rest <- getAllTraces n f
-      return (t:rest)
-
-getSummary :: Int -> Int -> Get SegySummary
-getSummary n f = do
-    empty <- isEmpty
-    if empty
-      then return $ SegySummary 0 0
-    else do
-      t <- getTrace n f
-      rest <- getAllTraces n f
-      return $ SegySummary 0 0.1
-      
-
-
 getSEGY :: Get Output  
 getSEGY = do
     h <- getTextHeader
@@ -310,8 +269,6 @@ readSegyLazy file = do
 
 printEbcdic :: Output -> IO ()
 printEbcdic output = BC.putStrLn $ BC.unlines (ebcdic output)
-
-printEbcdic' d = BC.putStrLn $ BC.unlines d
 
 printBinaryHeader :: Output -> IO ()
 printBinaryHeader output = T.mapM print (binaryHeader output) >> return ()
@@ -375,22 +332,25 @@ compilerOpts argv =
   --when (isJust $ optPrintTraces opts) $ printTraces num output
   --  where num = read (fromJust $ optPrintTraces opts) :: Int
 
-printSummary :: [Trace] -> IO ()
+printSummary :: [a] -> IO ()
 printSummary traces = do
     putStrLn "\nSummary:"
     putStrLn $ "Parsed "++ len ++ " traces"
   where 
     len = show $ length traces
 
---printTrace' :: Monad m => (a -> m b) -> BinaryHeader -> BL.ByteString -> m ()
---printTrace' func b stream = do
---    let n = fromJust $ value (numSamplesTrace b) 
---    let f = fromJust $ value (sampleFormat b)
---    t <- getTrace n f
---    func t
+getSamplesOnly :: Int -> Int -> Get [Float]
+getSamplesOnly numSamples sampleFormat = do
+    skip 240
+    samples <- getTraceData numSamples 
+    case sampleFormat of 
+      5 -> return $ (wordToFloat <$> samples)
+      1 -> return $ (wordToFloat . ibmToIeee754 <$> samples)
+      _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
---getTrace' :: Int -> Int -> Get a
-getTrace' numSamples sampleFormat = do
+
+getTrace :: Int -> Int -> Get Trace
+getTrace numSamples sampleFormat = do
     th <- T.mapM getHeader defaultTraceHeader
     samples <- getTraceData numSamples 
     case sampleFormat of 
@@ -398,11 +358,31 @@ getTrace' numSamples sampleFormat = do
       1 -> return $ (Trace th $ wordToFloat . ibmToIeee754 <$> samples)
       _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
-getTraces' f input
+getFromSegy :: Get a -> BL.ByteString -> [a]
+getFromSegy f input
    | BL.null input = []
    | otherwise =
       let (trace, rest, _) = runGetState f input 0
-      in trace : getTraces' f rest
+      in trace : getFromSegy f rest
+
+
+getVectorStats :: [Float] -> (Float, Float)
+getVectorStats vec = (a, b)
+  where 
+    a = minimum vec
+    b = maximum vec
+
+
+printOneTrace' :: [Float] -> IO ()
+printOneTrace' vec = do
+    putStrLn $ "min/max: " ++ show a ++ "/" ++ show b
+    where
+      (a, b) = getVectorStats vec
+
+printTraces' :: Int -> [[Float]] -> IO()
+printTraces' n traces = do
+   let t = take n traces 
+   mapM_ printOneTrace' t
 
 
 main :: IO()
@@ -417,16 +397,17 @@ main = do
 
   printEbcdic x
   printBinaryHeader x 
+
   let n = fromJust $ value (numSamplesTrace $ binaryHeader x) 
   let f = fromJust $ value (sampleFormat $ binaryHeader x)
 
-  let x' = getTraces' (getTrace' n f) rest
-  printTraces 30 x'
-  printSummary x'
+  let traces = getFromSegy (getTrace n f) rest
+  printTraces 1 traces
 
+  let samples = getFromSegy (getSamplesOnly n f) rest
+  printTraces' 1000 samples
 
   return ()
-
 
   --putStrLn . Pr.ppShow $ strs
   --putStrLn . Pr.ppShow $ opts
