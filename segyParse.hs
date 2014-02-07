@@ -191,7 +191,7 @@ data Trace = Trace
 data Output = Output 
   { ebcdic :: [BL.ByteString]
   , binaryHeader :: BinaryHeader ByteLoc
-  , traces :: [Trace]
+--  , traces :: [Trace]
   } 
 
 getTextHeaderLine,getTextFileHeader :: Get BL.ByteString
@@ -297,11 +297,11 @@ getSEGY :: Get Output
 getSEGY = do
     h <- getTextHeader
     b <- T.mapM getHeader defaultBinaryHeader
-    let n = fromJust $ value (numSamplesTrace b) 
-    let f = fromJust $ value (sampleFormat b)
-    t <- forM [1 .. 10] $ \func -> do getTrace n f
+    --let n = fromJust $ value (numSamplesTrace b) 
+    --let f = fromJust $ value (sampleFormat b)
+    --t <- forM [1 .. 10] $ \func -> do getTrace n f
     --t <- getAllTraces n f 
-    return $ Output h b t 
+    return $ Output h b
 
 readSegyLazy :: FilePath -> IO BL.ByteString
 readSegyLazy file = do
@@ -325,10 +325,10 @@ printOneTrace trace = do
     putStrLn . Pr.ppShow $ take 10 vec
     T.mapM print (traceHeader trace) >> return ()
 
-printTraces :: Int -> Output -> IO()
-printTraces n output = do
-    let t = take n $ traces output
-    mapM_ printOneTrace t
+printTraces :: Int -> [Trace] -> IO()
+printTraces n traces = do
+   let t = take n traces 
+   mapM_ printOneTrace t
 
 data Options = Options
  { optShowVersion :: Bool
@@ -375,12 +375,12 @@ compilerOpts argv =
   --when (isJust $ optPrintTraces opts) $ printTraces num output
   --  where num = read (fromJust $ optPrintTraces opts) :: Int
 
-printSummary :: Output -> IO ()
-printSummary output = do
+printSummary :: [Trace] -> IO ()
+printSummary traces = do
     putStrLn "\nSummary:"
     putStrLn $ "Parsed "++ len ++ " traces"
   where 
-    len = show $ length (traces output)
+    len = show $ length traces
 
 --printTrace' :: Monad m => (a -> m b) -> BinaryHeader -> BL.ByteString -> m ()
 --printTrace' func b stream = do
@@ -398,7 +398,6 @@ getTrace' numSamples sampleFormat = do
       1 -> return $ (Trace th $ wordToFloat . ibmToIeee754 <$> samples)
       _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
---getTraces' :: (a -> b) -> BL.ByteString -> [a]
 getTraces' f input
    | BL.null input = []
    | otherwise =
@@ -413,20 +412,18 @@ main = do
   when (null strs) $ error header
 
   streams <- mapM readSegyLazy strs
-  let (x:xs) = runGet getSEGY <$> streams
+  let stream = head streams
+  let (x, rest, _) = runGetState getSEGY stream 0
 
   printEbcdic x
   printBinaryHeader x 
+  let n = fromJust $ value (numSamplesTrace $ binaryHeader x) 
+  let f = fromJust $ value (sampleFormat $ binaryHeader x)
 
-  printTraces 2 x
-  printSummary x
-  let ebcdic' = getTraces' getTextHeader <$> streams
-  printEbcdic' $ head (head ebcdic')
+  let x' = getTraces' (getTrace' n f) rest
+  printTraces 30 x'
+  printSummary x'
 
-  let ebcdic' = getTraces' getTextHeader <$> streams
-  printEbcdic' $ head (head ebcdic')
-
-  let (x':xs') = getTraces' (getTrace' 201 1) <$> streams
 
   return ()
 
