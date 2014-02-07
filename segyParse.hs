@@ -423,6 +423,9 @@ main = do
   let ebcdic' = getTraces' getTextHeader <$> streams
   printEbcdic' $ head (head ebcdic')
 
+  let ebcdic' = getTraces' getTextHeader <$> streams
+  printEbcdic' $ head (head ebcdic')
+
   let (x':xs') = getTraces' (getTrace' 201 1) <$> streams
 
   return ()
