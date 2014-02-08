@@ -24,6 +24,12 @@ import qualified Data.Foldable as F
 import qualified Text.Show.Pretty as Pr
 
 
+data TraceStats = TraceStats 
+  { traceMin :: Float
+  , traceMax :: Float
+  } deriving Show
+
+
 data ByteLoc = ByteLoc 
   { description :: String 
   , startByte   :: Int
@@ -256,10 +262,6 @@ getSEGY :: Get Output
 getSEGY = do
     h <- getTextHeader
     b <- T.mapM getHeader defaultBinaryHeader
-    --let n = fromJust $ value (numSamplesTrace b) 
-    --let f = fromJust $ value (sampleFormat b)
-    --t <- forM [1 .. 10] $ \func -> do getTrace n f
-    --t <- getAllTraces n f 
     return $ Output h b
 
 readSegyLazy :: FilePath -> IO BL.ByteString
@@ -348,7 +350,6 @@ getSamplesOnly numSamples sampleFormat = do
       1 -> return $ (wordToFloat . ibmToIeee754 <$> samples)
       _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
-
 getTrace :: Int -> Int -> Get Trace
 getTrace numSamples sampleFormat = do
     th <- T.mapM getHeader defaultTraceHeader
@@ -366,8 +367,8 @@ getFromSegy f input
       in trace : getFromSegy f rest
 
 
-getVectorStats :: [Float] -> (Float, Float)
-getVectorStats vec = (a, b)
+getVectorStats :: [Float] -> TraceStats 
+getVectorStats vec = TraceStats a b
   where 
     a = minimum vec
     b = maximum vec
@@ -375,14 +376,21 @@ getVectorStats vec = (a, b)
 
 printOneTrace' :: [Float] -> IO ()
 printOneTrace' vec = do
-    putStrLn $ "min/max: " ++ show a ++ "/" ++ show b
+    putStrLn $ "min/max: " ++ show (traceMin stats) ++ "/" ++ show (traceMax stats)
     where
-      (a, b) = getVectorStats vec
+      stats = getVectorStats vec
 
 printTraces' :: Int -> [[Float]] -> IO()
 printTraces' n traces = do
-   let t = take n traces 
-   mapM_ printOneTrace' t
+    let t = take n traces 
+    mapM_ printOneTrace' t
+
+printAllTraces' :: [[Float]] -> IO()
+printAllTraces' traces = do
+    mapM_ printOneTrace' traces
+
+--getGlobalStatistics :: [[Float]] -> Float
+--getGlobalStatistics traces = foldl1 (\x -> max (traceMax x))  (map getVectorStats traces)
 
 
 main :: IO()
@@ -405,7 +413,10 @@ main = do
   printTraces 1 traces
 
   let samples = getFromSegy (getSamplesOnly n f) rest
-  printTraces' 1000 samples
+  --printAllTraces' samples
+
+  --print $ getGlobalStatistics samples
+  --putStrLn $ "global min/max: " ++ show (traceMin stats) ++ "/" ++ show (traceMax stats)
 
   return ()
 
