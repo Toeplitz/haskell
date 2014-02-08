@@ -1,8 +1,3 @@
-import Control.Monad
-import Control.Applicative
-import qualified Text.Show.Pretty as Pr
-
-
 data Foo = Foo
   { fooMin :: Float
   , fooMax :: Float
@@ -27,8 +22,10 @@ getGlobalFoo x = Foo a b c
 
 main :: IO()
 main = do
-  let numItems = 4000
-  let numLists = 100
+  let numItems = 2000
+  let numLists = 100000
+  putStrLn $ "numItems: " ++ show numItems
+  putStrLn $ "numLists: " ++ show numLists
 
   -- Create an infinite list of lists of floats, x is [[Float]]
   let x = take numLists $ repeat [1.0 .. numItems] 
