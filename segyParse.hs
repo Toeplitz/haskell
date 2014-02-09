@@ -17,6 +17,7 @@ import System.Environment
 import System.Console.GetOpt
 import System.IO
 
+import qualified Control.Foldl as L
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
 import qualified Data.Traversable as T
@@ -25,8 +26,8 @@ import qualified Text.Show.Pretty as Pr
 
 
 data TraceStats = TraceStats 
-  { traceMin :: Float
-  , traceMax :: Float
+  { traceMin :: Maybe Float
+  , traceMax :: Maybe Float
   } deriving Show
 
 
@@ -370,28 +371,34 @@ getFromSegy f input
 getVectorStats :: [Float] -> TraceStats 
 getVectorStats vec = TraceStats a b
   where 
-    a = minimum vec
-    b = maximum vec
+    a = Just $ minimum vec
+    b = Just $ maximum vec
 
 
 printOneTrace' :: [Float] -> IO ()
 printOneTrace' vec = do
     putStrLn $ "min/max: " ++ show (traceMin stats) ++ "/" ++ show (traceMax stats)
     where
-      stats = getVectorStats vec
+      stats = L.fold getTraceStats vec 
 
-printTraces' :: Int -> [[Float]] -> IO()
+printTraces' :: Int -> [[Float]] -> IO ()
 printTraces' n traces = do
     let t = take n traces 
     mapM_ printOneTrace' t
 
-printAllTraces' :: [[Float]] -> IO()
+printAllTraces' :: [[Float]] -> IO ()
 printAllTraces' traces = do
     mapM_ printOneTrace' traces
 
 --getGlobalStatistics :: [[Float]] -> Float
 --getGlobalStatistics traces = foldl1 (\x -> max (traceMax x))  (map getVectorStats traces)
 
+getTraceStats :: L.Fold Float TraceStats
+getTraceStats = TraceStats <$> L.minimum <*> L.maximum
+-- or: foldFloats = liftA3 Foo L.minimum L.maximum L.sum
+
+printGlobalTraceStats :: [[Float]] -> IO ()
+printGlobalTraceStats x = print $ L.fold getTraceStats (concat x)
 
 main :: IO()
 main = do
@@ -414,9 +421,8 @@ main = do
 
   let samples = getFromSegy (getSamplesOnly n f) rest
   --printAllTraces' samples
+  printGlobalTraceStats samples
 
-  --print $ getGlobalStatistics samples
-  --putStrLn $ "global min/max: " ++ show (traceMin stats) ++ "/" ++ show (traceMax stats)
 
   return ()
 

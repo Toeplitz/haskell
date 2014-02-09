@@ -1,3 +1,6 @@
+{-# LANGUAGE BangPatterns #-}
+import Data.List
+
 data Foo = Foo
   { fooMin :: Float
   , fooMax :: Float
@@ -19,6 +22,11 @@ getGlobalFoo x = Foo a b c
     b = maximum $ fmap fooMax x
     c = sum $ fmap fooSum x
 
+--f (Foo !min1 !max1 !sum1) y = Foo (min1 `min` y) (max1 `max` y) (sum1 + y)
+
+--getLocalFoo :: [Float] -> Foo
+--getLocalFoo [] = error "getLocalFoo: empty list"
+--getLocalFoo (x:xs) = foldl' f (Foo x x x) xs
 
 main :: IO()
 main = do
