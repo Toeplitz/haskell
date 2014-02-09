@@ -4,8 +4,9 @@
 {-# LANGUAGE DeriveFoldable #-}
 
 import Codec.Text.IConv (convert)
-import Control.Monad
 import Control.Applicative
+import Control.Monad
+import Control.Parallel
 import Data.Bits
 import Data.Binary.Get
 import Data.Binary.IEEE754 (wordToFloat)
@@ -368,13 +369,6 @@ getFromSegy f input
       in trace : getFromSegy f rest
 
 
-getVectorStats :: [Float] -> TraceStats 
-getVectorStats vec = TraceStats a b
-  where 
-    a = Just $ minimum vec
-    b = Just $ maximum vec
-
-
 printOneTrace' :: [Float] -> IO ()
 printOneTrace' vec = do
     putStrLn $ "min/max: " ++ show (traceMin stats) ++ "/" ++ show (traceMax stats)
@@ -390,12 +384,8 @@ printAllTraces' :: [[Float]] -> IO ()
 printAllTraces' traces = do
     mapM_ printOneTrace' traces
 
---getGlobalStatistics :: [[Float]] -> Float
---getGlobalStatistics traces = foldl1 (\x -> max (traceMax x))  (map getVectorStats traces)
-
 getTraceStats :: L.Fold Float TraceStats
 getTraceStats = TraceStats <$> L.minimum <*> L.maximum
--- or: foldFloats = liftA3 Foo L.minimum L.maximum L.sum
 
 printGlobalTraceStats :: [[Float]] -> IO ()
 printGlobalTraceStats x = print $ L.fold getTraceStats (concat x)
