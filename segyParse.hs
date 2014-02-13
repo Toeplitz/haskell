@@ -26,6 +26,12 @@ import qualified Data.Foldable as F
 import qualified Text.Show.Pretty as Pr
 
 
+data TraceOut = TraceOut
+  { traceSamples :: [Float]
+  , inline       :: Int
+  , xline        :: Int
+  }
+
 data TraceStats = TraceStats 
   { traceMin :: Maybe Float
   , traceMax :: Maybe Float
@@ -343,23 +349,34 @@ printSummary traces = do
   where 
     len = show $ length traces
 
-getSamplesOnly :: Int -> Int -> Get [Float]
-getSamplesOnly numSamples sampleFormat = do
-    skip 240
+getSamples :: Int -> Int -> Get [Float]
+getSamples numSamples sampleFormat = do
     samples <- getTraceData numSamples 
     case sampleFormat of 
       5 -> return $ (wordToFloat <$> samples)
       1 -> return $ (wordToFloat . ibmToIeee754 <$> samples)
       _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
+getTraceOut :: Int -> Int -> Get TraceOut
+getTraceOut numSamples sampleFormat = do
+    skip 4
+    il <- getSegyBytes 3
+    skip 12
+    xl <- getSegyBytes 3
+    skip (240 - 24)
+    samples <- getSamples numSamples sampleFormat
+    return $ TraceOut samples il xl
+
+getSamplesOnly :: Int -> Int -> Get [Float]
+getSamplesOnly numSamples sampleFormat = do
+    skip 240
+    getSamples numSamples sampleFormat
+
 getTrace :: Int -> Int -> Get Trace
 getTrace numSamples sampleFormat = do
     th <- T.mapM getHeader defaultTraceHeader
-    samples <- getTraceData numSamples 
-    case sampleFormat of 
-      5 -> return $ (Trace th $ wordToFloat <$> samples)
-      1 -> return $ (Trace th $ wordToFloat . ibmToIeee754 <$> samples)
-      _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
+    samples <- getSamples numSamples sampleFormat
+    return $ Trace th samples
 
 getFromSegy :: Get a -> BL.ByteString -> [a]
 getFromSegy f input
@@ -390,6 +407,9 @@ getTraceStats = TraceStats <$> L.minimum <*> L.maximum
 printGlobalTraceStats :: [[Float]] -> IO ()
 printGlobalTraceStats x = print $ L.fold getTraceStats (concat x)
 
+--getTraceOutStats :: L.Fold Maybe Int
+--getTraceOutStats = L.maximum
+
 main :: IO()
 main = do
   args <- getArgs
@@ -410,8 +430,14 @@ main = do
   printTraces 1 traces
 
   let samples = getFromSegy (getSamplesOnly n f) rest
-  --printAllTraces' samples
   printGlobalTraceStats samples
+
+  --let traceout = getFromSegy (getTraceOut n f) rest
+  --print $ minimum (map xline traceout)
+  --print $ maximum (map xline traceout)
+
+  --print $ minimum (map inline traceout)
+  --print $ maximum (map inline traceout)
 
 
   return ()
