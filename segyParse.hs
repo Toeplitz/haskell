@@ -6,7 +6,6 @@
 import Codec.Text.IConv (convert)
 import Control.Applicative
 import Control.Monad
-import Control.Parallel
 import Data.Bits
 import Data.Binary.Get
 import Data.Binary.IEEE754 (wordToFloat)
@@ -30,7 +29,7 @@ data TraceOut = TraceOut
   { traceSamples :: [Float]
   , inline       :: Int
   , xline        :: Int
-  }
+  } deriving Show
 
 data TraceStats = TraceStats 
   { traceMin :: Maybe Float
@@ -364,8 +363,9 @@ getTraceOut numSamples sampleFormat = do
     skip 12
     xl <- getSegyBytes 3
     skip (240 - 24)
-    samples <- getSamples numSamples sampleFormat
-    return $ TraceOut samples il xl
+--    samples <- getSamples numSamples sampleFormat
+    skip (numSamples * 4)
+    return $ TraceOut [] il xl
 
 getSamplesOnly :: Int -> Int -> Get [Float]
 getSamplesOnly numSamples sampleFormat = do
@@ -429,15 +429,14 @@ main = do
   let traces = getFromSegy (getTrace n f) rest
   printTraces 1 traces
 
-  let samples = getFromSegy (getSamplesOnly n f) rest
-  printGlobalTraceStats samples
+--  let samples = getFromSegy (getSamplesOnly n f) rest
+--  printGlobalTraceStats samples
 
-  --let traceout = getFromSegy (getTraceOut n f) rest
-  --print $ minimum (map xline traceout)
-  --print $ maximum (map xline traceout)
+  let traceout = getFromSegy (getTraceOut n f) rest
+  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (inline <$> traceout)
+  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (xline <$> traceout)
 
-  --print $ minimum (map inline traceout)
-  --print $ maximum (map inline traceout)
+  print $ filter (\x -> inline x == 200 && xline x == 1) traceout
 
 
   return ()
