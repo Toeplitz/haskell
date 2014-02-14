@@ -201,11 +201,9 @@ data Output = Output
   , binaryHeader :: BinaryHeader ByteLoc
   } 
 
---getTextHeaderLine,getTextFileHeader :: G.Get ByteString
 getTextHeaderLine = convert "IBM1047" "UTF8" <$> G.getLazyByteString 80
 getTextFileHeader = G.getLazyByteString 3200
 
---getTextHeader :: G.Get [BL.ByteString]
 getTextHeader = replicateM 40 getTextHeaderLine
 
 getLocSizeStr :: Int -> Int -> String
@@ -428,21 +426,10 @@ getTraceStats = TraceStats <$> L.minimum <*> L.maximum
 printGlobalTraceStats :: [[Float]] -> IO ()
 printGlobalTraceStats x = print $ L.fold getTraceStats (concat x)
 
-
-main :: IO()
-main = do
-  args <- getArgs
-  (opts, strs) <- compilerOpts args
-  when (null strs) $ error header
-
-  streams <- mapM readSegyLazy strs
-  let stream = head streams
-  let (x, rest, _) = G.runGetState getSEGY stream 0
-  --let (lol, rest, bar, x) = G.runGetIncremental getSEGY 
-
+segyActions :: BLI.ByteString -> Output -> IO ()
+segyActions rest x = do
   printEbcdic x
   printBinaryHeader x 
-
   let n = fromJust $ value (numSamplesTrace $ binaryHeader x) 
   let f = fromJust $ value (sampleFormat $ binaryHeader x)
 
@@ -452,13 +439,28 @@ main = do
   let samples = getFromSegy (getSamplesOnly n f) rest
   printGlobalTraceStats samples
 
---  let traceout = getFromSegy' (getTraceOut n f) rest
---  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (inline <$> traceout)
---  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (xline <$> traceout)
+  let traceout = getFromSegy (getTraceOut n f) rest
+  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (inline <$> traceout)
+  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (xline <$> traceout)
 
---  print $ filter (\x -> inline x == 200 && xline x == 1) traceout
+  print $ filter (\x -> inline x == 200 && xline x == 1) traceout
 
-  return ()
+
+
+main :: IO()
+main = do
+  args <- getArgs
+  (opts, strs) <- compilerOpts args
+  when (null strs) $ error header
+
+  streams <- mapM readSegyLazy strs
+  let stream = head streams
+
+  plot X11 $ Function2D [Title "Sine and Cosine"] [] (\x -> sin x * cos x)
+
+  case G.runGetOrFail getSEGY stream of 
+    Left  (lbs, o, err) -> error "Read failed, exiting!"
+    Right (lbs, o, res) -> segyActions lbs res
 
   --putStrLn . Pr.ppShow $ strs
   --putStrLn . Pr.ppShow $ opts
