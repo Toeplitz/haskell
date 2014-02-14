@@ -7,7 +7,7 @@ import Codec.Text.IConv (convert)
 import Control.Applicative
 import Control.Monad
 import Data.Bits
-import Data.Binary.Get
+import qualified Data.Binary.Get as G
 import Data.Binary.IEEE754 (wordToFloat)
 import Data.List
 import Data.Int (Int32)
@@ -20,6 +20,8 @@ import System.IO
 import qualified Control.Foldl as L
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
+--import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy.Internal as BLI
 import qualified Data.Traversable as T
 import qualified Data.Foldable as F
 import qualified Text.Show.Pretty as Pr
@@ -193,15 +195,15 @@ data Trace = Trace
 
 
 data Output = Output 
-  { ebcdic :: [BL.ByteString]
+  { ebcdic :: [BLI.ByteString]
   , binaryHeader :: BinaryHeader ByteLoc
   } 
 
-getTextHeaderLine,getTextFileHeader :: Get BL.ByteString
-getTextHeaderLine = convert "IBM1047" "UTF8" <$> getLazyByteString 80
-getTextFileHeader = getLazyByteString 3200
+--getTextHeaderLine,getTextFileHeader :: G.Get ByteString
+getTextHeaderLine = convert "IBM1047" "UTF8" <$> G.getLazyByteString 80
+getTextFileHeader = G.getLazyByteString 3200
 
-getTextHeader :: Get [BL.ByteString]
+--getTextHeader :: G.Get [BL.ByteString]
 getTextHeader = replicateM 40 getTextHeaderLine
 
 getLocSizeStr :: Int -> Int -> String
@@ -219,13 +221,13 @@ instance Show ByteLoc where
              start = startByte f
              end = endByte f
 
-getSegyBytes :: Int -> Get Int
+getSegyBytes :: Int -> G.Get Int
 getSegyBytes x = case x of 
-      1 -> getWord16be >>= return . fromIntegral
-      3 -> getWord32be >>= return . fromIntegral
-      _ -> skip  (x + 1) >> return (-1)
+      1 -> G.getWord16be >>= return . fromIntegral
+      3 -> G.getWord32be >>= return . fromIntegral
+      _ -> G.skip  (x + 1) >> return (-1)
 
-getHeader :: ByteLoc -> Get ByteLoc
+getHeader :: ByteLoc -> G.Get ByteLoc
 getHeader f = do
   d <- getSegyBytes $ endByte f - startByte f
   return $ f { value = Just d } 
@@ -260,12 +262,12 @@ ibmToIeee754 from
         !fmant' = fmant `unsafeShiftL` 1
         !t'     = t - 1
 
-getTraceData :: Int -> Get [Word32]
+getTraceData :: Int -> G.Get [Word32]
 getTraceData numSamples = do
-    val <- forM [1 .. numSamples] $ \func -> do getWord32be
+    val <- forM [1 .. numSamples] $ \func -> do G.getWord32be
     return $ val
 
-getSEGY :: Get Output  
+getSEGY :: G.Get Output  
 getSEGY = do
     h <- getTextHeader
     b <- T.mapM getHeader defaultBinaryHeader
@@ -348,7 +350,7 @@ printSummary traces = do
   where 
     len = show $ length traces
 
-getSamples :: Int -> Int -> Get [Float]
+getSamples :: Int -> Int -> G.Get [Float]
 getSamples numSamples sampleFormat = do
     samples <- getTraceData numSamples 
     case sampleFormat of 
@@ -356,35 +358,60 @@ getSamples numSamples sampleFormat = do
       1 -> return $ (wordToFloat . ibmToIeee754 <$> samples)
       _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
-getTraceOut :: Int -> Int -> Get TraceOut
+getTraceOut :: Int -> Int -> G.Get TraceOut
 getTraceOut numSamples sampleFormat = do
-    skip 4
+    G.skip 4
     il <- getSegyBytes 3
-    skip 12
+    G.skip 12
     xl <- getSegyBytes 3
-    skip (240 - 24)
+    G.skip (240 - 24)
 --    samples <- getSamples numSamples sampleFormat
-    skip (numSamples * 4)
+    G.skip (numSamples * 4)
     return $ TraceOut [] il xl
 
-getSamplesOnly :: Int -> Int -> Get [Float]
+getSamplesOnly :: Int -> Int -> G.Get [Float]
 getSamplesOnly numSamples sampleFormat = do
-    skip 240
+    G.skip 240
     getSamples numSamples sampleFormat
 
-getTrace :: Int -> Int -> Get Trace
+getTrace :: Int -> Int -> G.Get Trace
 getTrace numSamples sampleFormat = do
     th <- T.mapM getHeader defaultTraceHeader
     samples <- getSamples numSamples sampleFormat
     return $ Trace th samples
 
-getFromSegy :: Get a -> BL.ByteString -> [a]
+getFromSegy :: G.Get a -> BL.ByteString -> [a]
 getFromSegy f input
    | BL.null input = []
    | otherwise =
-      let (trace, rest, _) = runGetState f input 0
+      let (trace, rest, _) = G.runGetState f input 0
       in trace : getFromSegy f rest
 
+--getFromSegy' :: G.Get a -> BL.ByteString -> [a]
+--getFromSegy' f input = go (runG.GetIncremental f) input
+--  where
+--    decoder = runG.GetIncremental f
+--
+--    go :: Decoder a -> BLI.ByteString -> [a]
+--    go (Done leftover _consumed trade) input' =
+--      trade : go decoder (BLI.Chunk leftover input')
+--    go (Partial k) input'                     =
+--      go (k . takeHeadChunk $ input') (dropHeadChunk input')
+--    go (Fail _leftover _consumed msg) _input' =
+--      error msg
+
+--takeHeadChunk :: BLI.ByteString -> Maybe BS.ByteString
+--takeHeadChunk lbs =
+--    case lbs of
+--      (BLI.Chunk bs _) -> Just bs
+--      _ -> Nothing
+
+
+--dropHeadChunk :: BLI.ByteString -> BLI.ByteString
+--dropHeadChunk lbs =
+--    case lbs of
+--      (BLI.Chunk _ lbs') -> lbs'
+--      _ -> BLI.Empty
 
 printOneTrace' :: [Float] -> IO ()
 printOneTrace' vec = do
@@ -418,7 +445,7 @@ main = do
 
   streams <- mapM readSegyLazy strs
   let stream = head streams
-  let (x, rest, _) = runGetState getSEGY stream 0
+  let (x, rest, _) = G.runGetState getSEGY stream 0
 
   printEbcdic x
   printBinaryHeader x 
