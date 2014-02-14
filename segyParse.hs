@@ -20,11 +20,13 @@ import System.IO
 import qualified Control.Foldl as L
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
---import qualified Data.ByteString as BS
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Internal as BLI
 import qualified Data.Traversable as T
 import qualified Data.Foldable as F
 import qualified Text.Show.Pretty as Pr
+
+import Graphics.EasyPlot
 
 
 data TraceOut = TraceOut
@@ -195,7 +197,7 @@ data Trace = Trace
 
 
 data Output = Output 
-  { ebcdic :: [BLI.ByteString]
+  { ebcdic :: [BL.ByteString]
   , binaryHeader :: BinaryHeader ByteLoc
   } 
 
@@ -273,10 +275,6 @@ getSEGY = do
     b <- T.mapM getHeader defaultBinaryHeader
     return $ Output h b
 
-readSegyLazy :: FilePath -> IO BL.ByteString
-readSegyLazy file = do
-    handle <- openFile file ReadMode
-    BL.hGetContents handle
 
 printEbcdic :: Output -> IO ()
 printEbcdic output = BC.putStrLn $ BC.unlines (ebcdic output)
@@ -380,38 +378,34 @@ getTrace numSamples sampleFormat = do
     samples <- getSamples numSamples sampleFormat
     return $ Trace th samples
 
-getFromSegy :: G.Get a -> BL.ByteString -> [a]
-getFromSegy f input
-   | BL.null input = []
-   | otherwise =
-      let (trace, rest, _) = G.runGetState f input 0
-      in trace : getFromSegy f rest
+readSegyLazy :: FilePath -> IO BL.ByteString
+readSegyLazy file = do
+    handle <- openFile file ReadMode
+    BL.hGetContents handle
 
---getFromSegy' :: G.Get a -> BL.ByteString -> [a]
---getFromSegy' f input = go (runG.GetIncremental f) input
---  where
---    decoder = runG.GetIncremental f
---
---    go :: Decoder a -> BLI.ByteString -> [a]
---    go (Done leftover _consumed trade) input' =
---      trade : go decoder (BLI.Chunk leftover input')
---    go (Partial k) input'                     =
---      go (k . takeHeadChunk $ input') (dropHeadChunk input')
---    go (Fail _leftover _consumed msg) _input' =
---      error msg
+getFromSegy :: G.Get a -> BLI.ByteString -> [a]
+getFromSegy f input0 = go decoder input0
+  where
+    decoder = G.runGetIncremental f
 
---takeHeadChunk :: BLI.ByteString -> Maybe BS.ByteString
---takeHeadChunk lbs =
---    case lbs of
---      (BLI.Chunk bs _) -> Just bs
---      _ -> Nothing
+    go (G.Done leftover _consumed trace) input =
+      trace : go decoder (BLI.chunk leftover input)
+    go (G.Partial k) input                     =
+      go (k . takeHeadChunk $ input) (dropHeadChunk input)
+    go (G.Fail _leftover _consumed msg) _input =
+      []
 
+takeHeadChunk :: BLI.ByteString -> Maybe BS.ByteString
+takeHeadChunk lbs =
+    case lbs of
+      (BLI.Chunk bs _) -> Just bs
+      _ -> Nothing
 
---dropHeadChunk :: BLI.ByteString -> BLI.ByteString
---dropHeadChunk lbs =
---    case lbs of
---      (BLI.Chunk _ lbs') -> lbs'
---      _ -> BLI.Empty
+dropHeadChunk :: BLI.ByteString -> BLI.ByteString
+dropHeadChunk lbs =
+    case lbs of
+      (BLI.Chunk _ lbs') -> lbs'
+      _ -> BLI.Empty
 
 printOneTrace' :: [Float] -> IO ()
 printOneTrace' vec = do
@@ -434,8 +428,6 @@ getTraceStats = TraceStats <$> L.minimum <*> L.maximum
 printGlobalTraceStats :: [[Float]] -> IO ()
 printGlobalTraceStats x = print $ L.fold getTraceStats (concat x)
 
---getTraceOutStats :: L.Fold Maybe Int
---getTraceOutStats = L.maximum
 
 main :: IO()
 main = do
@@ -446,6 +438,7 @@ main = do
   streams <- mapM readSegyLazy strs
   let stream = head streams
   let (x, rest, _) = G.runGetState getSEGY stream 0
+  --let (lol, rest, bar, x) = G.runGetIncremental getSEGY 
 
   printEbcdic x
   printBinaryHeader x 
@@ -456,15 +449,14 @@ main = do
   let traces = getFromSegy (getTrace n f) rest
   printTraces 1 traces
 
---  let samples = getFromSegy (getSamplesOnly n f) rest
---  printGlobalTraceStats samples
+  let samples = getFromSegy (getSamplesOnly n f) rest
+  printGlobalTraceStats samples
 
-  let traceout = getFromSegy (getTraceOut n f) rest
-  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (inline <$> traceout)
-  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (xline <$> traceout)
+--  let traceout = getFromSegy' (getTraceOut n f) rest
+--  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (inline <$> traceout)
+--  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (xline <$> traceout)
 
-  print $ filter (\x -> inline x == 200 && xline x == 1) traceout
-
+--  print $ filter (\x -> inline x == 200 && xline x == 1) traceout
 
   return ()
 
