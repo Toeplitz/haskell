@@ -32,6 +32,7 @@ import Graphics.Rendering.Plot
 import Numeric.GSL
 import Numeric.GSL.Statistics
 import Numeric.LinearAlgebra
+import Data.Packed.Matrix
 
 
 data TraceOut = TraceOut
@@ -440,14 +441,13 @@ segyActions :: BLI.ByteString -> Output -> IO ()
 segyActions rest x = do
   printEbcdic x
   printBinaryHeader x 
-  let n = fromJust $ value (numSamplesTrace $ binaryHeader x) 
-  let f = fromJust $ value (sampleFormat $ binaryHeader x)
+  let (n, f) = getSampleData x
 
   let traces = getFromSegy (getTrace n f) rest
   printTraces 1 traces
 
-  --let samples = getFromSegy (getSamplesOnly n f) rest
-  --printGlobalTraceStats samples
+  let samples = getFromSegy (getSamplesOnly n f) rest
+  printGlobalTraceStats samples
 
   let traceout = getFromSegy (getTraceOut n f) rest
   let (ilMin, ilMax) = getExtrema inline traceout
@@ -461,35 +461,64 @@ segyActions rest x = do
   let foo = traceSamples (head $ filter (\x -> inline x == 200 && xline x == 10) traceout)
   let bar = fmap float2Double foo
   let bary = fmap float2Double y
-  print bar
 
   let baz = fromList bar :: Vector Double
   let bazy = fromList bary :: Vector Double
 
-  --writeFigure PNG "foo.png" (400, 400) test_graph 
-  --writeFigure PNG "foo.png" (400, 400) (test_graph2 (fromList y :: Vector Double))
-  writeFigure PNG "foo.png" (640, 640) (test_graph2 baz bazy)
-
-  
+  writeFigure SVG "foo.svg" (640, 640) (createGraphFigure baz bazy)
 
   return ()
 
-test_graph2 x y = do
-       withTextDefaults $ setFontFamily "OpenSymbol"
-       withTitle $ setText "Testing plot package:"
-       setPlots 1 1
-       withPlot (1,1) $ do
-                        setDataset (x,[line y blue, point y black])
-                        addAxis XAxis (Side Lower) $ withAxisLabel $ setText "time (s)"
-                        addAxis YAxis (Side Lower) $ withAxisLabel $ setText "amplitude"
-                        addAxis XAxis (Value 0) $ return ()
-                        setRangeFromData XAxis Lower Linear
-                        setRangeFromData YAxis Lower Linear
-                        --setRange YAxis Lower Linear (-1.25) 1.25
+getSampleData :: Output -> (Int, Int)
+getSampleData x = (a, b)
+  where 
+    a = fromJust $ value (numSamplesTrace $ binaryHeader x) 
+    b = fromJust $ value (sampleFormat $ binaryHeader x)
+
+
+segyActions' :: BLI.ByteString -> Output -> IO ()
+segyActions' rest x = do
+  let (n, f) = getSampleData x
+
+  let traceout = getFromSegy (getTraceOut n f) rest
+  let selected = filter (\x -> inline x == 0) traceout
+  let values = float2Double <$> concat (traceSamples <$> selected)
+  print $ length values
+
+  let mat = trans $ (length selected><n)(values)
+  --let mat = (2><2)[1..4::Double]
+
+  writeFigure SVG "bar.svg" (1600, 800) (createMatrixFigure mat)
+
+  return ()
+
+createMatrixFigure m = do
+  setPlots 1 1
+  withPlot (1,1) $ do 
+    setDataset m
+    addAxis XAxis (Side Upper) $ withAxisLabel $ setText "Tace"
+    addAxis YAxis (Side Lower) $ withAxisLabel $ setText "Depth/Time"
+    setRangeFromData XAxis Lower Linear
+    setRangeFromData YAxis Lower Linear
+
+createGraphFigure x y = do
+ withTextDefaults $ setFontFamily "OpenSymbol"
+ withTitle $ setText "Testing plot package:"
+ setPlots 1 1
+ withPlot (1,1) $ do
+    setDataset (x,[line y blue, point y black])
+    addAxis XAxis (Side Lower) $ withAxisLabel $ setText "time (s)"
+    addAxis YAxis (Side Lower) $ withAxisLabel $ setText "amplitude"
+    addAxis XAxis (Value 0) $ return ()
+    setRangeFromData XAxis Lower Linear
+    setRangeFromData YAxis Lower Linear
+    --setRange YAxis Lower Linear (-1.25) 1.25
+
 main :: IO()
 main = do
   args <- getArgs
   (opts, strs) <- compilerOpts args
+
   when (null strs) $ error header
 
   streams <- mapM readSegyLazy strs
@@ -498,7 +527,7 @@ main = do
 
   case G.runGetOrFail getSEGY stream of 
     Left  (lbs, o, err) -> error "Read failed, exiting!"
-    Right (lbs, o, res) -> segyActions lbs res
+    Right (lbs, o, res) -> segyActions' lbs res
 
   --putStrLn . Pr.ppShow $ strs
   --putStrLn . Pr.ppShow $ opts
