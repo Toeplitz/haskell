@@ -26,7 +26,12 @@ import qualified Data.Traversable as T
 import qualified Data.Foldable as F
 import qualified Text.Show.Pretty as Pr
 
-import Graphics.EasyPlot
+import GHC.Float
+import Graphics.Rendering.Cairo (Render)
+import Graphics.Rendering.Plot
+import Numeric.GSL
+import Numeric.GSL.Statistics
+import Numeric.LinearAlgebra
 
 
 data TraceOut = TraceOut
@@ -361,9 +366,10 @@ getTraceOut numSamples sampleFormat = do
     G.skip 12
     xl <- getSegyBytes 3
     G.skip (240 - 24)
---    samples <- getSamples numSamples sampleFormat
-    G.skip (numSamples * 4)
-    return $ TraceOut [] il xl
+    samples <- getSamples numSamples sampleFormat
+--    G.skip (numSamples * 4)
+    --return $ TraceOut [] il xl
+    return $ TraceOut samples il xl
 
 getSamplesOnly :: Int -> Int -> G.Get [Float]
 getSamplesOnly numSamples sampleFormat = do
@@ -426,6 +432,10 @@ getTraceStats = TraceStats <$> L.minimum <*> L.maximum
 printGlobalTraceStats :: [[Float]] -> IO ()
 printGlobalTraceStats x = print $ L.fold getTraceStats (concat x)
 
+
+getExtrema :: (Functor f, Ord a, F.Foldable f) => (a1 -> a) -> f a1 -> (Maybe a, Maybe a)
+getExtrema member s = L.fold ((,) <$> L.minimum <*> L.maximum) (member <$> s)
+
 segyActions :: BLI.ByteString -> Output -> IO ()
 segyActions rest x = do
   printEbcdic x
@@ -436,17 +446,46 @@ segyActions rest x = do
   let traces = getFromSegy (getTrace n f) rest
   printTraces 1 traces
 
-  let samples = getFromSegy (getSamplesOnly n f) rest
-  printGlobalTraceStats samples
+  --let samples = getFromSegy (getSamplesOnly n f) rest
+  --printGlobalTraceStats samples
 
   let traceout = getFromSegy (getTraceOut n f) rest
-  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (inline <$> traceout)
-  print $ L.fold ((,) <$> L.minimum <*> L.maximum) (xline <$> traceout)
+  let (ilMin, ilMax) = getExtrema inline traceout
+  let (xlMin, xlMax) = getExtrema xline traceout
 
-  print $ filter (\x -> inline x == 200 && xline x == 1) traceout
+  putStrLn $ "Min/max inlines: " ++ show ilMin ++ "/" ++ show ilMax
+  putStrLn $ "Min/max xlines: " ++ show xlMin ++ "/" ++ show xlMax
 
+  let dt = fromIntegral (fromJust $ value (sampleInterval $ binaryHeader x)) :: Float
+  let y = (\x -> x * dt / 1000) <$> [0 .. fromIntegral n :: Float]
+  let foo = traceSamples (head $ filter (\x -> inline x == 200 && xline x == 10) traceout)
+  let bar = fmap float2Double foo
+  let bary = fmap float2Double y
+  print bar
 
+  let baz = fromList bar :: Vector Double
+  let bazy = fromList bary :: Vector Double
 
+  --writeFigure PNG "foo.png" (400, 400) test_graph 
+  --writeFigure PNG "foo.png" (400, 400) (test_graph2 (fromList y :: Vector Double))
+  writeFigure PNG "foo.png" (640, 640) (test_graph2 baz bazy)
+
+  
+
+  return ()
+
+test_graph2 x y = do
+       withTextDefaults $ setFontFamily "OpenSymbol"
+       withTitle $ setText "Testing plot package:"
+       setPlots 1 1
+       withPlot (1,1) $ do
+                        setDataset (x,[line y blue, point y black])
+                        addAxis XAxis (Side Lower) $ withAxisLabel $ setText "time (s)"
+                        addAxis YAxis (Side Lower) $ withAxisLabel $ setText "amplitude"
+                        addAxis XAxis (Value 0) $ return ()
+                        setRangeFromData XAxis Lower Linear
+                        setRangeFromData YAxis Lower Linear
+                        --setRange YAxis Lower Linear (-1.25) 1.25
 main :: IO()
 main = do
   args <- getArgs
@@ -456,7 +495,6 @@ main = do
   streams <- mapM readSegyLazy strs
   let stream = head streams
 
-  plot X11 $ Function2D [Title "Sine and Cosine"] [] (\x -> sin x * cos x)
 
   case G.runGetOrFail getSEGY stream of 
     Left  (lbs, o, err) -> error "Read failed, exiting!"
