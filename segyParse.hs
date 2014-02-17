@@ -301,17 +301,19 @@ printTraces n traces = do
    mapM_ printOneTrace t
 
 data Options = Options
- { optShowVersion :: Bool
- , optPrintEbcdic :: Bool
- , optPrintBinary :: Bool
- , optPrintTraces :: Maybe String
+ { optShowVersion  :: Bool
+ , optPrintEbcdic  :: Bool
+ , optPrintBinary  :: Bool
+ , optPrintSummary :: Bool
+ , optPrintTraces  :: Maybe String
  } deriving Show
 
-defaultOptions    = Options
- { optShowVersion = False
- , optPrintEbcdic = False
- , optPrintBinary = False
- , optPrintTraces = Nothing
+defaultOptions     = Options
+ { optShowVersion  = False
+ , optPrintEbcdic  = False
+ , optPrintBinary  = False
+ , optPrintSummary = False
+ , optPrintTraces  = Nothing
  }
 
 options :: [OptDescr (Options -> Options)]
@@ -319,15 +321,18 @@ options =
  [ Option ['v'] ["version"]
      (NoArg (\opts -> opts { optShowVersion = True }))
      "show version number"
- , Option ['e'] ["ebcdic"]
-     (NoArg (\opts -> opts { optPrintEbcdic = True }))
-     "print ebcdic header"
  , Option ['b'] ["binary"]
      (NoArg (\opts -> opts { optPrintBinary = True }))
      "print binary header"
+ , Option ['e'] ["ebcdic"]
+     (NoArg (\opts -> opts { optPrintEbcdic = True }))
+     "print ebcdic header"
+ , Option ['s'] ["summary"]
+     (NoArg (\opts -> opts { optPrintSummary = True }))
+     "scan through entire file and print summary"
  , Option ['t'] ["trace"]
      (OptArg ((\f opts -> opts { optPrintTraces = Just f }) . fromMaybe "trace") "N")
-       "print summary of N first traces"
+       "print formatted data from the N first traces"
  ]
 
 header :: String
@@ -339,18 +344,16 @@ compilerOpts argv =
     (o,n,[]  ) -> return (foldl (flip id) defaultOptions o, n)
     (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
 
---parseFile opts output = printBinaryHeader output
---  when (optPrintEbcdic opts) $ printEbcdic output
-  --when (optPrintBinary opts) $ 
-  --when (isJust $ optPrintTraces opts) $ printTraces num output
-  --  where num = read (fromJust $ optPrintTraces opts) :: Int
 
-printSummary :: [a] -> IO ()
-printSummary traces = do
-    putStrLn "\nSummary:"
-    putStrLn $ "Parsed "++ len ++ " traces"
-  where 
-    len = show $ length traces
+printSummary traceout = do
+--  let samples = getFromSegy (getSamplesOnly n f) rest
+--  printGlobalTraceStats samples
+
+  let (ilMin, ilMax) = getExtrema inline traceout
+  let (xlMin, xlMax) = getExtrema xline traceout
+
+  putStrLn $ "Min/max inlines: " ++ show ilMin ++ "/" ++ show ilMax
+  putStrLn $ "Min/max xlines: " ++ show xlMin ++ "/" ++ show xlMax
 
 getSamples :: Int -> Int -> G.Get [Float]
 getSamples numSamples sampleFormat = do
@@ -418,11 +421,6 @@ printOneTrace' vec = do
     where
       stats = L.fold getTraceStats vec 
 
-printTraces' :: Int -> [[Float]] -> IO ()
-printTraces' n traces = do
-    let t = take n traces 
-    mapM_ printOneTrace' t
-
 printAllTraces' :: [[Float]] -> IO ()
 printAllTraces' traces = do
     mapM_ printOneTrace' traces
@@ -476,21 +474,29 @@ getSampleData x = (a, b)
     b = fromJust $ value (sampleFormat $ binaryHeader x)
 
 
-segyActions' :: BLI.ByteString -> Output -> IO ()
-segyActions' rest x = do
-  let (n, f) = getSampleData x
+segyActions' :: Options -> BLI.ByteString -> Output -> IO ()
+segyActions' opts rest output = do
 
-  let traceout = getFromSegy (getTraceOut n f) rest
-  let selected = filter (\x -> inline x == 0) traceout
-  let values = float2Double <$> concat (traceSamples <$> selected)
-  print $ length values
+  when (optPrintEbcdic opts) $ printEbcdic output
+  when (optPrintBinary opts) $ printBinaryHeader output
+  when (optPrintBinary opts) $ printBinaryHeader traceout
+  when (isJust $ optPrintTraces opts) $ printTraces num traces
+    where 
+      (n, f) = getSampleData output
+      num = read (fromJust $ optPrintTraces opts) :: Int
+      traceout = getFromSegy (getTraceOut n f) rest
+      traces = getFromSegy (getTrace n f) rest
 
-  let mat = trans $ (length selected><n)(values)
-  --let mat = (2><2)[1..4::Double]
+--  let (n, f) = getSampleData x
 
-  writeFigure SVG "bar.svg" (1600, 800) (createMatrixFigure mat)
+--  let traceout = getFromSegy (getTraceOut n f) rest
+--  let selected = filter (\x -> inline x == 0) traceout
+--  let values = float2Double <$> concat (traceSamples <$> selected)
 
-  return ()
+--  let mat = trans $ (length selected><n)(values)
+--  writeFigure SVG "bar.svg" (1600, 800) (createMatrixFigure mat)
+
+  --return ()
 
 createMatrixFigure m = do
   setPlots 1 1
@@ -514,20 +520,16 @@ createGraphFigure x y = do
     setRangeFromData YAxis Lower Linear
     --setRange YAxis Lower Linear (-1.25) 1.25
 
+parseFile opts stream = do
+  case G.runGetOrFail getSEGY stream of 
+    Left  (lbs, o, err) -> error "Read failed, exiting!"
+    Right (lbs, o, res) -> segyActions' opts lbs res
+
 main :: IO()
 main = do
   args <- getArgs
   (opts, strs) <- compilerOpts args
-
   when (null strs) $ error header
 
   streams <- mapM readSegyLazy strs
-  let stream = head streams
-
-
-  case G.runGetOrFail getSEGY stream of 
-    Left  (lbs, o, err) -> error "Read failed, exiting!"
-    Right (lbs, o, res) -> segyActions' lbs res
-
-  --putStrLn . Pr.ppShow $ strs
-  --putStrLn . Pr.ppShow $ opts
+  mapM_ (parseFile opts) streams
