@@ -279,7 +279,6 @@ getSEGY = do
     b <- T.mapM getHeader defaultBinaryHeader
     return $ Output h b
 
-
 printEbcdic :: Output -> IO ()
 printEbcdic output = BC.putStrLn $ BC.unlines (ebcdic output)
 
@@ -289,10 +288,9 @@ printBinaryHeader output = T.mapM print (binaryHeader output) >> return ()
 printOneTrace :: Trace -> IO ()
 printOneTrace trace = do
     let vec = dataPoints trace
-    let vecMin = show $ minimum vec
-    let vecMax = show $ maximum vec
-    putStrLn $ "\nTrace summary, min/max " ++ vecMin ++ "/" ++ vecMax ++ " m/s"
+    let stats = L.fold getTraceStats $ dataPoints trace
     putStrLn . Pr.ppShow $ take 10 vec
+    putStrLn $ "min/max: " ++ show (traceMin stats) ++ "/" ++ show (traceMax stats) ++ "\n"
     T.mapM print (traceHeader trace) >> return ()
 
 printTraces :: Int -> [Trace] -> IO()
@@ -305,6 +303,7 @@ data Options = Options
  , optPrintEbcdic  :: Bool
  , optPrintBinary  :: Bool
  , optPrintSummary :: Bool
+ , optPrintTrcSummary :: Bool
  , optPrintTraces  :: Maybe String
  } deriving Show
 
@@ -313,6 +312,7 @@ defaultOptions     = Options
  , optPrintEbcdic  = False
  , optPrintBinary  = False
  , optPrintSummary = False
+ , optPrintTrcSummary = False
  , optPrintTraces  = Nothing
  }
 
@@ -327,9 +327,12 @@ options =
  , Option ['e'] ["ebcdic"]
      (NoArg (\opts -> opts { optPrintEbcdic = True }))
      "print ebcdic header"
+ , Option ['f'] [""]
+     (NoArg (\opts -> opts { optPrintTrcSummary = True }))
+     "scan through entire file and print trace data summary"
  , Option ['s'] ["summary"]
      (NoArg (\opts -> opts { optPrintSummary = True }))
-     "scan through entire file and print summary"
+     "scan through entire file and print trace header summary"
  , Option ['t'] ["trace"]
      (OptArg ((\f opts -> opts { optPrintTraces = Just f }) . fromMaybe "trace") "N")
        "print formatted data from the N first traces"
@@ -346,9 +349,6 @@ compilerOpts argv =
 
 
 printSummary traceout = do
---  let samples = getFromSegy (getSamplesOnly n f) rest
---  printGlobalTraceStats samples
-
   let (ilMin, ilMax) = getExtrema inline traceout
   let (xlMin, xlMax) = getExtrema xline traceout
 
@@ -374,6 +374,16 @@ getTraceOut numSamples sampleFormat = do
 --    G.skip (numSamples * 4)
     --return $ TraceOut [] il xl
     return $ TraceOut samples il xl
+
+getTraceOutHeaders :: Int -> Int -> G.Get TraceOut
+getTraceOutHeaders numSamples sampleFormat = do
+    G.skip 4
+    il <- getSegyBytes 3
+    G.skip 12
+    xl <- getSegyBytes 3
+    G.skip (240 - 24)
+    G.skip (numSamples * 4)
+    return $ TraceOut [] il xl
 
 getSamplesOnly :: Int -> Int -> G.Get [Float]
 getSamplesOnly numSamples sampleFormat = do
@@ -415,57 +425,26 @@ dropHeadChunk lbs =
       (BLI.Chunk _ lbs') -> lbs'
       _ -> BLI.Empty
 
-printOneTrace' :: [Float] -> IO ()
-printOneTrace' vec = do
-    putStrLn $ "min/max: " ++ show (traceMin stats) ++ "/" ++ show (traceMax stats)
-    where
-      stats = L.fold getTraceStats vec 
-
-printAllTraces' :: [[Float]] -> IO ()
-printAllTraces' traces = do
-    mapM_ printOneTrace' traces
-
 getTraceStats :: L.Fold Float TraceStats
 getTraceStats = TraceStats <$> L.minimum <*> L.maximum
 
 printGlobalTraceStats :: [[Float]] -> IO ()
 printGlobalTraceStats x = print $ L.fold getTraceStats (concat x)
 
-
 getExtrema :: (Functor f, Ord a, F.Foldable f) => (a1 -> a) -> f a1 -> (Maybe a, Maybe a)
 getExtrema member s = L.fold ((,) <$> L.minimum <*> L.maximum) (member <$> s)
 
-segyActions :: BLI.ByteString -> Output -> IO ()
-segyActions rest x = do
-  printEbcdic x
-  printBinaryHeader x 
-  let (n, f) = getSampleData x
-
-  let traces = getFromSegy (getTrace n f) rest
-  printTraces 1 traces
-
-  let samples = getFromSegy (getSamplesOnly n f) rest
-  printGlobalTraceStats samples
-
-  let traceout = getFromSegy (getTraceOut n f) rest
-  let (ilMin, ilMax) = getExtrema inline traceout
-  let (xlMin, xlMax) = getExtrema xline traceout
-
-  putStrLn $ "Min/max inlines: " ++ show ilMin ++ "/" ++ show ilMax
-  putStrLn $ "Min/max xlines: " ++ show xlMin ++ "/" ++ show xlMax
-
-  let dt = fromIntegral (fromJust $ value (sampleInterval $ binaryHeader x)) :: Float
-  let y = (\x -> x * dt / 1000) <$> [0 .. fromIntegral n :: Float]
-  let foo = traceSamples (head $ filter (\x -> inline x == 200 && xline x == 10) traceout)
-  let bar = fmap float2Double foo
-  let bary = fmap float2Double y
-
-  let baz = fromList bar :: Vector Double
-  let bazy = fromList bary :: Vector Double
-
-  writeFigure SVG "foo.svg" (640, 640) (createGraphFigure baz bazy)
-
-  return ()
+--segyActions :: BLI.ByteString -> Output -> IO ()
+--segyActions rest x = do
+--  let dt = fromIntegral (fromJust $ value (sampleInterval $ binaryHeader x)) :: Float
+--  let y = (\x -> x * dt / 1000) <$> [0 .. fromIntegral n :: Float]
+--  let foo = traceSamples (head $ filter (\x -> inline x == 200 && xline x == 10) traceout)
+--  let bar = fmap float2Double foo
+--  let bary = fmap float2Double y
+--  let baz = fromList bar :: Vector Double
+--  let bazy = fromList bary :: Vector Double
+--  writeFigure SVG "foo.svg" (640, 640) (createGraphFigure baz bazy)
+--  return ()
 
 getSampleData :: Output -> (Int, Int)
 getSampleData x = (a, b)
@@ -476,18 +455,18 @@ getSampleData x = (a, b)
 
 segyActions' :: Options -> BLI.ByteString -> Output -> IO ()
 segyActions' opts rest output = do
-
-  when (optPrintEbcdic opts) $ printEbcdic output
-  when (optPrintBinary opts) $ printBinaryHeader output
-  when (optPrintBinary opts) $ printBinaryHeader traceout
+  when (optPrintEbcdic opts)          $ printEbcdic output
+  when (optPrintBinary opts)          $ printBinaryHeader output
+  when (optPrintSummary opts)         $ printSummary traceouthdrs
+  when (optPrintTrcSummary opts)      $ printGlobalTraceStats samples
   when (isJust $ optPrintTraces opts) $ printTraces num traces
     where 
       (n, f) = getSampleData output
-      num = read (fromJust $ optPrintTraces opts) :: Int
-      traceout = getFromSegy (getTraceOut n f) rest
-      traces = getFromSegy (getTrace n f) rest
+      traceouthdrs = getFromSegy (getTraceOutHeaders n f) rest
+      samples      = getFromSegy (getSamplesOnly n f) rest
+      traces       = getFromSegy (getTrace n f) rest
+      num          = read (fromJust $ optPrintTraces opts) :: Int
 
---  let (n, f) = getSampleData x
 
 --  let traceout = getFromSegy (getTraceOut n f) rest
 --  let selected = filter (\x -> inline x == 0) traceout
