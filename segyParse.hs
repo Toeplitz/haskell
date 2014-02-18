@@ -10,12 +10,14 @@ import Data.Bits
 import qualified Data.Binary.Get as G
 import Data.Binary.IEEE754 (wordToFloat)
 import Data.List
+import Data.List.Split
 import Data.Int (Int32)
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.Word (Word32)
 import System.Environment
 import System.Console.GetOpt
 import System.IO
+import System.Posix.Files 
 
 import qualified Control.Foldl as L
 import qualified Data.ByteString.Lazy as BL
@@ -299,21 +301,23 @@ printTraces n traces = do
    mapM_ printOneTrace t
 
 data Options = Options
- { optShowVersion  :: Bool
- , optPrintEbcdic  :: Bool
- , optPrintBinary  :: Bool
- , optPrintSummary :: Bool
+ { optShowVersion     :: Bool
+ , optPrintEbcdic     :: Bool
+ , optPrintBinary     :: Bool
+ , optPrintSummary    :: Bool
  , optPrintTrcSummary :: Bool
- , optPrintTraces  :: Maybe String
+ , optPlotInline      :: Maybe String
+ , optPrintTraces     :: Maybe String
  } deriving Show
 
-defaultOptions     = Options
- { optShowVersion  = False
- , optPrintEbcdic  = False
- , optPrintBinary  = False
- , optPrintSummary = False
+defaultOptions        = Options
+ { optShowVersion     = False
+ , optPrintEbcdic     = False
+ , optPrintBinary     = False
+ , optPrintSummary    = False
  , optPrintTrcSummary = False
- , optPrintTraces  = Nothing
+ , optPlotInline      = Nothing
+ , optPrintTraces     = Nothing
  }
 
 options :: [OptDescr (Options -> Options)]
@@ -330,6 +334,9 @@ options =
  , Option ['f'] [""]
      (NoArg (\opts -> opts { optPrintTrcSummary = True }))
      "scan through entire file and print trace data summary"
+ , Option ['p'] ["plot"]
+     (OptArg ((\f opts -> opts { optPlotInline = Just f }) . fromMaybe "plot") "N")
+       "plot grayscale png image of inline N to [filename]"
  , Option ['s'] ["summary"]
      (NoArg (\opts -> opts { optPrintSummary = True }))
      "scan through entire file and print trace header summary"
@@ -371,8 +378,6 @@ getTraceOut numSamples sampleFormat = do
     xl <- getSegyBytes 3
     G.skip (240 - 24)
     samples <- getSamples numSamples sampleFormat
---    G.skip (numSamples * 4)
-    --return $ TraceOut [] il xl
     return $ TraceOut samples il xl
 
 getTraceOutHeaders :: Int -> Int -> G.Get TraceOut
@@ -446,6 +451,25 @@ getExtrema member s = L.fold ((,) <$> L.minimum <*> L.maximum) (member <$> s)
 --  writeFigure SVG "foo.svg" (640, 640) (createGraphFigure baz bazy)
 --  return ()
 
+plotLineExec x filename traceout = do
+  putStrLn $ "Parsing inline: " ++ show x ++ " and writing file: " ++ filename
+  let selected = filter (\f -> inline f == x) traceout
+  let values = float2Double <$> concat (traceSamples <$> selected)
+  let n = length $ traceSamples (head selected)
+
+  let mat = trans $ (length selected><n)(values)
+  writeFigure SVG filename (1200, 800) (createMatrixFigure mat)
+  s <- getFileStatus filename 
+  let fsize = (fromIntegral $ fileSize s) :: Float
+  putStrLn $ "Wrote " ++ show (fsize / 1024) ++ " kb to '" ++ filename ++ "'"
+
+plotLine opt traceout = do
+    case (findIndex (\f -> f == ',') opt) of
+      Nothing -> error "argument parsing failed!"
+      Just a -> plotLineExec (read x :: Int) filename traceout
+        where 
+          [x, filename] = splitOn "," opt
+
 getSampleData :: Output -> (Int, Int)
 getSampleData x = (a, b)
   where 
@@ -459,23 +483,16 @@ segyActions' opts rest output = do
   when (optPrintBinary opts)          $ printBinaryHeader output
   when (optPrintSummary opts)         $ printSummary traceouthdrs
   when (optPrintTrcSummary opts)      $ printGlobalTraceStats samples
+  when (isJust $ optPlotInline opts)  $ plotLine str traceout
   when (isJust $ optPrintTraces opts) $ printTraces num traces
     where 
       (n, f) = getSampleData output
       traceouthdrs = getFromSegy (getTraceOutHeaders n f) rest
+      traceout     = getFromSegy (getTraceOut n f) rest
       samples      = getFromSegy (getSamplesOnly n f) rest
       traces       = getFromSegy (getTrace n f) rest
       num          = read (fromJust $ optPrintTraces opts) :: Int
-
-
---  let traceout = getFromSegy (getTraceOut n f) rest
---  let selected = filter (\x -> inline x == 0) traceout
---  let values = float2Double <$> concat (traceSamples <$> selected)
-
---  let mat = trans $ (length selected><n)(values)
---  writeFigure SVG "bar.svg" (1600, 800) (createMatrixFigure mat)
-
-  --return ()
+      str          = fromJust $ optPlotInline opts
 
 createMatrixFigure m = do
   setPlots 1 1
