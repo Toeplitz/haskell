@@ -2,26 +2,39 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveFoldable #-}
+{- |
+- Module      :  Segy
+- Description :  Parse seismic SEGY files
+- Copyright   :  (c) Martin Sarajaervi
+- License     :  GPL
+-
+- Maintainer  :  martin.sarajaervi <at> gmail.com
+- Stability   :  unstable 
+- Portability :  portable 
+-
+- Parsing of SEGY files defined in the rev 1 format:
+- http://www.seg.org/documents/10161/77915/seg_y_rev1.pdf
+- -}
 
 module Segy where
 
+import Figure
 
 import Codec.Text.IConv (convert)
 import Control.Applicative
 import Control.Monad
 import Data.Bits
-import qualified Data.Binary.Get as G
 import Data.Binary.IEEE754 (wordToFloat)
 import Data.List
 import Data.List.Split
 import Data.Int (Int32)
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.Word (Word32)
-import System.Console.GetOpt
 import System.IO
 import System.Posix.Files 
 
 import qualified Control.Foldl as L
+import qualified Data.Binary.Get as G
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
 import qualified Data.ByteString as BS
@@ -31,13 +44,10 @@ import qualified Data.Foldable as F
 import qualified Text.Show.Pretty as Pr
 
 import GHC.Float
-import Graphics.Rendering.Cairo (Render)
-import Graphics.Rendering.Plot
 import Numeric.GSL
 import Numeric.GSL.Statistics
 import Numeric.LinearAlgebra
 import Data.Packed.Matrix
-
 
 data TraceOut = TraceOut
   { traceSamples :: [Float]
@@ -306,61 +316,6 @@ printTraces n traces = do
    let t = take n traces 
    mapM_ printOneTrace t
 
-data Options = Options
- { optShowVersion     :: Bool
- , optPrintEbcdic     :: Bool
- , optPrintBinary     :: Bool
- , optPrintSummary    :: Bool
- , optPrintTrcSummary :: Bool
- , optPlotInline      :: Maybe String
- , optPrintTraces     :: Maybe String
- } deriving Show
-
-defaultOptions :: Options
-defaultOptions        = Options
- { optShowVersion     = False
- , optPrintEbcdic     = False
- , optPrintBinary     = False
- , optPrintSummary    = False
- , optPrintTrcSummary = False
- , optPlotInline      = Nothing
- , optPrintTraces     = Nothing
- }
-
-options :: [OptDescr (Options -> Options)]
-options =
- [ Option ['v'] ["version"]
-     (NoArg (\opts -> opts { optShowVersion = True }))
-     "show version number"
- , Option ['b'] ["binary"]
-     (NoArg (\opts -> opts { optPrintBinary = True }))
-     "print binary header"
- , Option ['e'] ["ebcdic"]
-     (NoArg (\opts -> opts { optPrintEbcdic = True }))
-     "print ebcdic header"
- , Option ['f'] [""]
-     (NoArg (\opts -> opts { optPrintTrcSummary = True }))
-     "scan through entire file and print trace data summary"
- , Option ['p'] ["plot"]
-     (OptArg ((\f opts -> opts { optPlotInline = Just f }) . fromMaybe "plot") "N")
-       "plot grayscale png image of inline N to [filename]"
- , Option ['s'] ["summary"]
-     (NoArg (\opts -> opts { optPrintSummary = True }))
-     "scan through entire file and print trace header summary"
- , Option ['t'] ["trace"]
-     (OptArg ((\f opts -> opts { optPrintTraces = Just f }) . fromMaybe "trace") "N")
-       "print formatted data from the N first traces"
- ]
-
-header :: String
-header =  "Usage: segyParse.hs [OPTION...] files..."
-
-compilerOpts :: [String] -> IO (Options, [String])
-compilerOpts argv =
-  case getOpt Permute options argv of
-    (o,n,[]  ) -> return (foldl (flip id) defaultOptions o, n)
-    (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
-
 printSummary :: (Functor f, F.Foldable f) => f TraceOut -> IO ()
 printSummary traceout = do
   let (ilMin, ilMax) = getExtrema inline traceout
@@ -401,6 +356,13 @@ getSamplesOnly :: Int -> Int -> G.Get [Float]
 getSamplesOnly numSamples f = do
     G.skip 240
     getSamples numSamples f 
+
+getSampleData :: Output -> (Int, Int)
+getSampleData x = (a, b)
+  where 
+    a = fromJust $ value (numSamplesTrace $ binaryHeader x) 
+    b = fromJust $ value (sampleFormat $ binaryHeader x)
+
 
 getTrace :: Int -> Int -> G.Get Trace
 getTrace numSamples f = do
@@ -458,30 +420,6 @@ getExtrema member s = L.fold ((,) <$> L.minimum <*> L.maximum) (member <$> s)
 --  writeFigure SVG "foo.svg" (640, 640) (createGraphFigure baz bazy)
 --  return ()
 
-
-createMatrixFigure :: Dataset a => a -> Figure ()
-createMatrixFigure m = do
-  setPlots 1 1
-  withPlot (1,1) $ do 
-    setDataset m
-    addAxis XAxis (Side Upper) $ withAxisLabel $ setText "Tace"
-    addAxis YAxis (Side Lower) $ withAxisLabel $ setText "Depth/Time"
-    setRangeFromData XAxis Lower Linear
-    setRangeFromData YAxis Lower Linear
-
---createGraphFigure x y = do
--- withTextDefaults $ setFontFamily "OpenSymbol"
--- withTitle $ setText "Testing plot package:"
--- setPlots 1 1
--- withPlot (1,1) $ do
---    setDataset (x,[line y blue, point y black])
---    addAxis XAxis (Side Lower) $ withAxisLabel $ setText "time (s)"
---    addAxis YAxis (Side Lower) $ withAxisLabel $ setText "amplitude"
---    addAxis XAxis (Value 0) $ return ()
---    setRangeFromData XAxis Lower Linear
---    setRangeFromData YAxis Lower Linear
-    --setRange YAxis Lower Linear (-1.25) 1.25
-
 plotLineExec :: Int -> [Char] -> [TraceOut] -> IO ()
 plotLineExec x filename traceout = do
   putStrLn $ "Parsing inline: " ++ show x ++ " and writing file: " ++ filename
@@ -490,7 +428,7 @@ plotLineExec x filename traceout = do
   let n = length $ traceSamples (head selected)
 
   let mat = trans $ (length selected><n)(values) :: Matrix Double
-  writeFigure SVG filename (1200, 800) (createMatrixFigure mat)
+  makePlot (createMatrixFigure mat) filename
   s <- getFileStatus filename 
   let fsize = (fromIntegral $ fileSize s) :: Float
   putStrLn $ "Wrote " ++ show (fsize / 1024) ++ " kb to '" ++ filename ++ "'"
@@ -503,34 +441,4 @@ plotLine opt traceout = do
         where 
           [x, filename] = splitOn "," opt
 
-getSampleData :: Output -> (Int, Int)
-getSampleData x = (a, b)
-  where 
-    a = fromJust $ value (numSamplesTrace $ binaryHeader x) 
-    b = fromJust $ value (sampleFormat $ binaryHeader x)
-
-
-segyActions' :: Options -> BLI.ByteString -> Output -> IO ()
-segyActions' opts rest output = do
-  when (optPrintEbcdic opts)          $ printEbcdic output
-  when (optPrintBinary opts)          $ printBinaryHeader output
-  when (optPrintSummary opts)         $ printSummary traceouthdrs
-  when (optPrintTrcSummary opts)      $ printGlobalTraceStats samples
-  when (isJust $ optPlotInline opts)  $ plotLine str traceout
-  when (isJust $ optPrintTraces opts) $ printTraces num traces
-    where 
-      (n, f) = getSampleData output
-      traceouthdrs = getFromSegy (getTraceOutHeaders n) rest
-      traceout     = getFromSegy (getTraceOut n f) rest
-      samples      = getFromSegy (getSamplesOnly n f) rest
-      traces       = getFromSegy (getTrace n f) rest
-      num          = read (fromJust $ optPrintTraces opts) :: Int
-      str          = fromJust $ optPlotInline opts
-
-
-parseFile :: Options -> BLI.ByteString -> IO ()
-parseFile opts stream = do
-  case G.runGetOrFail getSEGY stream of 
-    Left  (lbs, o, err) -> error "Read failed, exiting!"
-    Right (lbs, o, res) -> segyActions' opts lbs res
 
