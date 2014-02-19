@@ -3,6 +3,9 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveFoldable #-}
 
+module Segy where
+
+
 import Codec.Text.IConv (convert)
 import Control.Applicative
 import Control.Monad
@@ -14,7 +17,6 @@ import Data.List.Split
 import Data.Int (Int32)
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.Word (Word32)
-import System.Environment
 import System.Console.GetOpt
 import System.IO
 import System.Posix.Files 
@@ -388,7 +390,7 @@ getTraceOutHeaders numSamples sampleFormat = do
     xl <- getSegyBytes 3
     G.skip (240 - 24)
     G.skip (numSamples * 4)
-    return $ TraceOut [] il xl
+      return $ TraceOut [] il xl
 
 getSamplesOnly :: Int -> Int -> G.Get [Float]
 getSamplesOnly numSamples sampleFormat = do
@@ -521,11 +523,3 @@ parseFile opts stream = do
     Left  (lbs, o, err) -> error "Read failed, exiting!"
     Right (lbs, o, res) -> segyActions' opts lbs res
 
-main :: IO()
-main = do
-  args <- getArgs
-  (opts, strs) <- compilerOpts args
-  when (null strs) $ error header
-
-  streams <- mapM readSegyLazy strs
-  mapM_ (parseFile opts) streams

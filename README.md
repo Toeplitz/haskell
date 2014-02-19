@@ -1,1 +1,1 @@
-Haskell SEGY parsing
+Haskell velocity toolkit and SEGY parsing
