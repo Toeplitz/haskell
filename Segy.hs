@@ -211,9 +211,13 @@ data Output = Output
   , binaryHeader :: BinaryHeader ByteLoc
   } 
 
+getTextHeaderLine :: G.Get BLI.ByteString
 getTextHeaderLine = convert "IBM1047" "UTF8" <$> G.getLazyByteString 80
+
+getTextFileHeader :: G.Get BLI.ByteString
 getTextFileHeader = G.getLazyByteString 3200
 
+getTextHeader :: G.Get [BLI.ByteString]
 getTextHeader = replicateM 40 getTextHeaderLine
 
 getLocSizeStr :: Int -> Int -> String
@@ -312,6 +316,7 @@ data Options = Options
  , optPrintTraces     :: Maybe String
  } deriving Show
 
+defaultOptions :: Options
 defaultOptions        = Options
  { optShowVersion     = False
  , optPrintEbcdic     = False
@@ -356,7 +361,7 @@ compilerOpts argv =
     (o,n,[]  ) -> return (foldl (flip id) defaultOptions o, n)
     (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
 
-
+printSummary :: (Functor f, F.Foldable f) => f TraceOut -> IO ()
 printSummary traceout = do
   let (ilMin, ilMax) = getExtrema inline traceout
   let (xlMin, xlMax) = getExtrema xline traceout
@@ -365,42 +370,42 @@ printSummary traceout = do
   putStrLn $ "Min/max xlines: " ++ show xlMin ++ "/" ++ show xlMax
 
 getSamples :: Int -> Int -> G.Get [Float]
-getSamples numSamples sampleFormat = do
+getSamples numSamples f = do
     samples <- getTraceData numSamples 
-    case sampleFormat of 
+    case f of 
       5 -> return $ (wordToFloat <$> samples)
       1 -> return $ (wordToFloat . ibmToIeee754 <$> samples)
       _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
 getTraceOut :: Int -> Int -> G.Get TraceOut
-getTraceOut numSamples sampleFormat = do
+getTraceOut numSamples f = do
     G.skip 4
     il <- getSegyBytes 3
     G.skip 12
     xl <- getSegyBytes 3
     G.skip (240 - 24)
-    samples <- getSamples numSamples sampleFormat
+    samples <- getSamples numSamples f
     return $ TraceOut samples il xl
 
-getTraceOutHeaders :: Int -> Int -> G.Get TraceOut
-getTraceOutHeaders numSamples sampleFormat = do
+getTraceOutHeaders :: Int -> G.Get TraceOut
+getTraceOutHeaders numSamples = do
     G.skip 4
     il <- getSegyBytes 3
     G.skip 12
     xl <- getSegyBytes 3
     G.skip (240 - 24)
     G.skip (numSamples * 4)
-      return $ TraceOut [] il xl
+    return $ TraceOut [] il xl
 
 getSamplesOnly :: Int -> Int -> G.Get [Float]
-getSamplesOnly numSamples sampleFormat = do
+getSamplesOnly numSamples f = do
     G.skip 240
-    getSamples numSamples sampleFormat
+    getSamples numSamples f 
 
 getTrace :: Int -> Int -> G.Get Trace
-getTrace numSamples sampleFormat = do
+getTrace numSamples f = do
     th <- T.mapM getHeader defaultTraceHeader
-    samples <- getSamples numSamples sampleFormat
+    samples <- getSamples numSamples f
     return $ Trace th samples
 
 readSegyLazy :: FilePath -> IO BL.ByteString
@@ -453,18 +458,44 @@ getExtrema member s = L.fold ((,) <$> L.minimum <*> L.maximum) (member <$> s)
 --  writeFigure SVG "foo.svg" (640, 640) (createGraphFigure baz bazy)
 --  return ()
 
+
+createMatrixFigure :: Dataset a => a -> Figure ()
+createMatrixFigure m = do
+  setPlots 1 1
+  withPlot (1,1) $ do 
+    setDataset m
+    addAxis XAxis (Side Upper) $ withAxisLabel $ setText "Tace"
+    addAxis YAxis (Side Lower) $ withAxisLabel $ setText "Depth/Time"
+    setRangeFromData XAxis Lower Linear
+    setRangeFromData YAxis Lower Linear
+
+--createGraphFigure x y = do
+-- withTextDefaults $ setFontFamily "OpenSymbol"
+-- withTitle $ setText "Testing plot package:"
+-- setPlots 1 1
+-- withPlot (1,1) $ do
+--    setDataset (x,[line y blue, point y black])
+--    addAxis XAxis (Side Lower) $ withAxisLabel $ setText "time (s)"
+--    addAxis YAxis (Side Lower) $ withAxisLabel $ setText "amplitude"
+--    addAxis XAxis (Value 0) $ return ()
+--    setRangeFromData XAxis Lower Linear
+--    setRangeFromData YAxis Lower Linear
+    --setRange YAxis Lower Linear (-1.25) 1.25
+
+plotLineExec :: Int -> [Char] -> [TraceOut] -> IO ()
 plotLineExec x filename traceout = do
   putStrLn $ "Parsing inline: " ++ show x ++ " and writing file: " ++ filename
   let selected = filter (\f -> inline f == x) traceout
   let values = float2Double <$> concat (traceSamples <$> selected)
   let n = length $ traceSamples (head selected)
 
-  let mat = trans $ (length selected><n)(values)
+  let mat = trans $ (length selected><n)(values) :: Matrix Double
   writeFigure SVG filename (1200, 800) (createMatrixFigure mat)
   s <- getFileStatus filename 
   let fsize = (fromIntegral $ fileSize s) :: Float
   putStrLn $ "Wrote " ++ show (fsize / 1024) ++ " kb to '" ++ filename ++ "'"
 
+plotLine :: [Char] -> [TraceOut] -> IO ()
 plotLine opt traceout = do
     case (findIndex (\f -> f == ',') opt) of
       Nothing -> error "argument parsing failed!"
@@ -489,35 +520,15 @@ segyActions' opts rest output = do
   when (isJust $ optPrintTraces opts) $ printTraces num traces
     where 
       (n, f) = getSampleData output
-      traceouthdrs = getFromSegy (getTraceOutHeaders n f) rest
+      traceouthdrs = getFromSegy (getTraceOutHeaders n) rest
       traceout     = getFromSegy (getTraceOut n f) rest
       samples      = getFromSegy (getSamplesOnly n f) rest
       traces       = getFromSegy (getTrace n f) rest
       num          = read (fromJust $ optPrintTraces opts) :: Int
       str          = fromJust $ optPlotInline opts
 
-createMatrixFigure m = do
-  setPlots 1 1
-  withPlot (1,1) $ do 
-    setDataset m
-    addAxis XAxis (Side Upper) $ withAxisLabel $ setText "Tace"
-    addAxis YAxis (Side Lower) $ withAxisLabel $ setText "Depth/Time"
-    setRangeFromData XAxis Lower Linear
-    setRangeFromData YAxis Lower Linear
 
-createGraphFigure x y = do
- withTextDefaults $ setFontFamily "OpenSymbol"
- withTitle $ setText "Testing plot package:"
- setPlots 1 1
- withPlot (1,1) $ do
-    setDataset (x,[line y blue, point y black])
-    addAxis XAxis (Side Lower) $ withAxisLabel $ setText "time (s)"
-    addAxis YAxis (Side Lower) $ withAxisLabel $ setText "amplitude"
-    addAxis XAxis (Value 0) $ return ()
-    setRangeFromData XAxis Lower Linear
-    setRangeFromData YAxis Lower Linear
-    --setRange YAxis Lower Linear (-1.25) 1.25
-
+parseFile :: Options -> BLI.ByteString -> IO ()
 parseFile opts stream = do
   case G.runGetOrFail getSEGY stream of 
     Left  (lbs, o, err) -> error "Read failed, exiting!"
