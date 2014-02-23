@@ -18,15 +18,12 @@
 
 module Segy where
 
-import Figure
-
 import Codec.Text.IConv (convert)
 import Control.Applicative
 import Control.Monad
 import Data.Bits
 import Data.Binary.IEEE754 (wordToFloat)
 import Data.List
-import Data.List.Split
 import Data.Int (Int32)
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.Word (Word32)
@@ -49,10 +46,15 @@ import Numeric.GSL.Statistics
 import Numeric.LinearAlgebra
 import Data.Packed.Matrix
 
-data TraceOut = TraceOut
+data Trace = Trace
   { traceSamples :: [Float]
   , inline       :: Int
   , xline        :: Int
+  } deriving Show
+
+data TraceFull = TraceFull
+  { traceHeader :: TraceHeader ByteLoc
+  , dataPoints :: [Float]
   } deriving Show
 
 data TraceStats = TraceStats 
@@ -60,14 +62,12 @@ data TraceStats = TraceStats
   , traceMax :: Maybe Float
   } deriving Show
 
-
 data ByteLoc = ByteLoc 
   { description :: String 
   , startByte   :: Int
   , endByte     :: Int
   , value       :: Maybe Int
   } 
-
 
 data BinaryHeader t = BinaryHeader
   { jobIdNum              :: t -- Bytes 3201 - 3204
@@ -210,10 +210,6 @@ defaultTraceHeader = TraceHeader
   , unassigned04          = ByteLoc "...                                                             "  119 240 Nothing
   }
 
-data Trace = Trace 
-  { traceHeader :: TraceHeader ByteLoc
-  , dataPoints :: [Float]
-  } deriving(Show)
 
 
 data Output = Output 
@@ -237,7 +233,7 @@ getLocSizeStr x y = case x - y of
                       _ -> " (unknown)"
 
 instance Show ByteLoc where
-  show f = (description f) ++ ": " ++ val ++ "\t\t\tbytes: " ++ show start ++ " - " ++ show end ++ getLocSizeStr end start 
+  show f = description f ++ ": " ++ val ++ "\t\t\tbytes: " ++ show start ++ " - " ++ show end ++ getLocSizeStr end start 
            where 
              val = case value f of
                      Just x -> show x
@@ -247,8 +243,8 @@ instance Show ByteLoc where
 
 getSegyBytes :: Int -> G.Get Int
 getSegyBytes x = case x of 
-      1 -> G.getWord16be >>= return . fromIntegral
-      3 -> G.getWord32be >>= return . fromIntegral
+      1 -> liftM fromIntegral G.getWord16be
+      3 -> liftM fromIntegral G.getWord32be
       _ -> G.skip  (x + 1) >> return (-1)
 
 getHeader :: ByteLoc -> G.Get ByteLoc
@@ -287,9 +283,7 @@ ibmToIeee754 from
         !t'     = t - 1
 
 getTraceData :: Int -> G.Get [Word32]
-getTraceData numSamples = do
-    val <- forM [1 .. numSamples] $ \func -> do G.getWord32be
-    return $ val
+getTraceData numSamples = forM [1 .. numSamples] $ const G.getWord32be
 
 getSEGY :: G.Get Output  
 getSEGY = do
@@ -301,25 +295,25 @@ printEbcdic :: Output -> IO ()
 printEbcdic output = BC.putStrLn $ BC.unlines (ebcdic output)
 
 printBinaryHeader :: Output -> IO ()
-printBinaryHeader output = T.mapM print (binaryHeader output) >> return ()
+printBinaryHeader output = void $ T.mapM print (binaryHeader output)
 
-printOneTrace :: Trace -> IO ()
+printOneTrace :: TraceFull -> IO ()
 printOneTrace trace = do
     let vec = dataPoints trace
     let stats = L.fold getTraceStats $ dataPoints trace
     putStrLn . Pr.ppShow $ take 10 vec
     putStrLn $ "min/max: " ++ show (traceMin stats) ++ "/" ++ show (traceMax stats) ++ "\n"
-    T.mapM print (traceHeader trace) >> return ()
+    void $ T.mapM print (traceHeader trace)
 
-printTraces :: Int -> [Trace] -> IO()
+printTraces :: Int -> [TraceFull] -> IO()
 printTraces n traces = do
    let t = take n traces 
    mapM_ printOneTrace t
 
-printSummary :: (Functor f, F.Foldable f) => f TraceOut -> IO ()
-printSummary traceout = do
-  let (ilMin, ilMax) = getExtrema inline traceout
-  let (xlMin, xlMax) = getExtrema xline traceout
+printSummary :: (Functor f, F.Foldable f) => f Trace -> IO ()
+printSummary trace = do
+  let (ilMin, ilMax) = getExtrema inline trace
+  let (xlMin, xlMax) = getExtrema xline trace
 
   putStrLn $ "Min/max inlines: " ++ show ilMin ++ "/" ++ show ilMax
   putStrLn $ "Min/max xlines: " ++ show xlMin ++ "/" ++ show xlMax
@@ -328,29 +322,29 @@ getSamples :: Int -> Int -> G.Get [Float]
 getSamples numSamples f = do
     samples <- getTraceData numSamples 
     case f of 
-      5 -> return $ (wordToFloat <$> samples)
-      1 -> return $ (wordToFloat . ibmToIeee754 <$> samples)
+      5 -> return $ wordToFloat <$> samples
+      1 -> return $ wordToFloat . ibmToIeee754 <$> samples
       _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
-getTraceOut :: Int -> Int -> G.Get TraceOut
-getTraceOut numSamples f = do
+getTrace :: Int -> Int -> G.Get Trace
+getTrace numSamples f = do
     G.skip 4
     il <- getSegyBytes 3
     G.skip 12
     xl <- getSegyBytes 3
     G.skip (240 - 24)
     samples <- getSamples numSamples f
-    return $ TraceOut samples il xl
+    return $ Trace samples il xl
 
-getTraceOutHeaders :: Int -> G.Get TraceOut
-getTraceOutHeaders numSamples = do
+getTraceHeaders :: Int -> G.Get Trace
+getTraceHeaders numSamples = do
     G.skip 4
     il <- getSegyBytes 3
     G.skip 12
     xl <- getSegyBytes 3
     G.skip (240 - 24)
     G.skip (numSamples * 4)
-    return $ TraceOut [] il xl
+    return $ Trace [] il xl
 
 getSamplesOnly :: Int -> Int -> G.Get [Float]
 getSamplesOnly numSamples f = do
@@ -364,11 +358,11 @@ getSampleData x = (a, b)
     b = fromJust $ value (sampleFormat $ binaryHeader x)
 
 
-getTrace :: Int -> Int -> G.Get Trace
-getTrace numSamples f = do
+getTrace' :: Int -> Int -> G.Get TraceFull
+getTrace' numSamples f = do
     th <- T.mapM getHeader defaultTraceHeader
     samples <- getSamples numSamples f
-    return $ Trace th samples
+    return $ TraceFull th samples
 
 readSegyLazy :: FilePath -> IO BL.ByteString
 readSegyLazy file = do
@@ -376,7 +370,7 @@ readSegyLazy file = do
     BL.hGetContents handle
 
 getFromSegy :: G.Get a -> BLI.ByteString -> [a]
-getFromSegy f input0 = go decoder input0
+getFromSegy f = go decoder
   where
     decoder = G.runGetIncremental f
 
@@ -420,25 +414,20 @@ getExtrema member s = L.fold ((,) <$> L.minimum <*> L.maximum) (member <$> s)
 --  writeFigure SVG "foo.svg" (640, 640) (createGraphFigure baz bazy)
 --  return ()
 
-plotLineExec :: Int -> [Char] -> [TraceOut] -> IO ()
-plotLineExec x filename traceout = do
-  putStrLn $ "Parsing inline: " ++ show x ++ " and writing file: " ++ filename
-  let selected = filter (\f -> inline f == x) traceout
-  let values = float2Double <$> concat (traceSamples <$> selected)
-  let n = length $ traceSamples (head selected)
+getInline :: Int -> [Trace] -> [Trace]
+getInline n = filter (\f -> inline f == n)
 
-  let mat = trans $ (length selected><n)(values) :: Matrix Double
-  makePlot (createMatrixFigure mat) filename
+getListOfDoubles :: [Trace] -> [Double]
+getListOfDoubles x = float2Double <$> concat (traceSamples <$> x)
+
+getMatrix :: [Trace] -> Matrix Double
+getMatrix x = trans $ (length x><n)values :: Matrix Double
+  where 
+    values = getListOfDoubles x
+    n = length $ traceSamples (head x)
+
+printFileWritten :: FilePath -> IO ()
+printFileWritten filename = do
   s <- getFileStatus filename 
   let fsize = (fromIntegral $ fileSize s) :: Float
   putStrLn $ "Wrote " ++ show (fsize / 1024) ++ " kb to '" ++ filename ++ "'"
-
-plotLine :: [Char] -> [TraceOut] -> IO ()
-plotLine opt traceout = do
-    case (findIndex (\f -> f == ',') opt) of
-      Nothing -> error "argument parsing failed!"
-      Just a -> plotLineExec (read x :: Int) filename traceout
-        where 
-          [x, filename] = splitOn "," opt
-
-
