@@ -1,5 +1,5 @@
-{-# OPTIONS -XBangPatterns -fno-warn-unused-binds -fno-warn-unused-matches -fno-warn-unused-imports -fno-warn-type-defaults #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveFoldable #-}
 {- |
@@ -20,17 +20,19 @@ module Segy where
 
 import Codec.Text.IConv (convert)
 import Control.Applicative
+--import Control.Parallel.Strategies (runEval, rpar, using, parListChunk, rdeepseq)
 import Control.Monad
 import Data.Bits
 import Data.Binary.IEEE754 (wordToFloat)
-import Data.List
 import Data.Int (Int32)
-import Data.Maybe (fromMaybe, fromJust, isJust)
+import Data.List.Split
+import Data.Maybe (fromJust)
 import Data.Word (Word32)
 import System.IO
 import System.Posix.Files 
 
 import qualified Control.Foldl as L
+import qualified Control.Monad.Par as P
 import qualified Data.Binary.Get as G
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
@@ -41,10 +43,7 @@ import qualified Data.Foldable as F
 import qualified Text.Show.Pretty as Pr
 
 import GHC.Float
-import Numeric.GSL
-import Numeric.GSL.Statistics
 import Numeric.LinearAlgebra
-import Data.Packed.Matrix
 
 data Trace = Trace
   { traceSamples :: [Float]
@@ -326,23 +325,24 @@ getSamples numSamples f = do
       1 -> return $ wordToFloat . ibmToIeee754 <$> samples
       _ -> error "Error: only ibm floating poins or ieee754 sample formats are supported."
 
-getTrace :: Int -> Int -> G.Get Trace
-getTrace numSamples f = do
+traceBytes :: G.Get (Int, Int)
+traceBytes = do
     G.skip 4
     il <- getSegyBytes 3
     G.skip 12
     xl <- getSegyBytes 3
     G.skip (240 - 24)
+    return (il, xl)
+
+getTrace :: Int -> Int -> G.Get Trace
+getTrace numSamples f = do
+    (il, xl) <- traceBytes
     samples <- getSamples numSamples f
     return $ Trace samples il xl
 
 getTraceHeaders :: Int -> G.Get Trace
 getTraceHeaders numSamples = do
-    G.skip 4
-    il <- getSegyBytes 3
-    G.skip 12
-    xl <- getSegyBytes 3
-    G.skip (240 - 24)
+    (il, xl) <-traceBytes
     G.skip (numSamples * 4)
     return $ Trace [] il xl
 
@@ -378,7 +378,7 @@ getFromSegy f = go decoder
       trace : go decoder (BLI.chunk leftover input)
     go (G.Partial k) input                     =
       go (k . takeHeadChunk $ input) (dropHeadChunk input)
-    go (G.Fail _leftover _consumed msg) _input =
+    go (G.Fail _leftover _consumed _) _input =
       []
 
 takeHeadChunk :: BLI.ByteString -> Maybe BS.ByteString
@@ -395,6 +395,43 @@ dropHeadChunk lbs =
 
 getTraceStats :: L.Fold Float TraceStats
 getTraceStats = TraceStats <$> L.minimum <*> L.maximum
+
+
+-- From http://community.haskell.org/~simonmar/slides/CUFP.pdf
+parMapChunk :: P.NFData b => Int -> (a -> b) -> [a] -> P.Par [b]
+parMapChunk n f xs = concat <$> P.parMap (map f) (chunk' n xs)
+
+chunk' :: Int -> [a] -> [[a]]
+chunk' _ [] = []
+chunk' n xs = as : chunk' n bs where (as, bs) = splitAt n xs
+
+printGlobalTraceStats' :: [[Float]] -> IO ()
+printGlobalTraceStats' x = do
+    let n = quot (length x) 4
+    let l = chunksOf n x
+    forM_ l (print . length)
+
+    --runEval $ do
+    --  d <- rpar (L.fold getTraceStats (head l))
+    --  print (traceMin d)
+
+--    print $ P.runPar $ parMapChunk 1000 (L.fold getTraceStats) x
+    --let stats = L.fold getTraceStats (concat x)
+    --print $ P.runPar $ do
+    --  i1 <- P.new 
+    --  i2 <- P.new 
+    --  i3 <- P.new 
+    --  i4 <- P.new 
+    --  P.fork $ P.put_ i1 (L.fold getTraceStats (concat $ head l))
+    --  P.fork $ P.put_ i2 (L.fold getTraceStats (concat $ l !! 1))
+    --  P.fork $ P.put_ i3 (L.fold getTraceStats (concat $ l !! 2))
+    --  P.fork $ P.put_ i4 (L.fold getTraceStats (concat $ l !! 3))
+      --P.fork $ P.put_ i2 (L.fold getTraceStats (concat x))
+    --  stats' <- P.get i1
+    --  stats2' <- P.get i2
+    --  stats3' <- P.get i3
+    --  stats4' <- P.get i4
+    --  return (stats', stats2', stats3', stats4')
 
 printGlobalTraceStats :: [[Float]] -> IO ()
 printGlobalTraceStats x = print $ L.fold getTraceStats (concat x)

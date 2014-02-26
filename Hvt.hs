@@ -5,7 +5,9 @@
 
 
 import Figure
+import Well
 
+import Control.Applicative
 import Control.Monad
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.List.Split
@@ -15,6 +17,7 @@ import System.Environment
 
 import qualified Data.Binary.Get as G
 import qualified Data.ByteString.Lazy.Internal as BLI
+import qualified Text.ParserCombinators.Parsec as P
 
 import Segy
 
@@ -93,11 +96,11 @@ runActions opts rest output = do
   when (optPrintEbcdic opts)          $ printEbcdic output
   when (optPrintBinary opts)          $ printBinaryHeader output
   when (optPrintSummary opts)         $ printSummary tracehdrs
-  when (optPrintTrcSummary opts)      $ printGlobalTraceStats samples
+  when (optPrintTrcSummary opts)      $ printGlobalTraceStats' samples
   when (isJust $ optPlotInline opts)  $ parsePlotArgv str trace
   when (isJust $ optPrintTraces opts) $ printTraces num traces
     where 
-      (n, f) = getSampleData output
+      (n, f)       = getSampleData output
       tracehdrs    = getFromSegy (getTraceHeaders n) rest
       trace        = getFromSegy (getTrace n f) rest
       samples      = getFromSegy (getSamplesOnly n f) rest
@@ -106,7 +109,7 @@ runActions opts rest output = do
       str          = fromJust $ optPlotInline opts
 
 parseFile :: Options -> BLI.ByteString -> IO ()
-parseFile opts stream = 
+parseFile opts stream = do
   case G.runGetOrFail getSEGY stream of 
     Left  (_, _, _) -> error "Read failed, exiting!"
     Right (lbs, _, res) -> runActions opts lbs res
@@ -119,3 +122,12 @@ main = do
 
   streams <- mapM readSegyLazy strs
   mapM_ (parseFile opts) streams
+
+  xs <- readFile "data/well_24_9_1_checkshot_ascii.txt"
+  let (_,rest) = splitAt 17 $ lines xs
+    
+  wells <- mapM_ wellParse rest
+
+  --print $ fmap (splitOn " ") (rest)
+  --print $ splitOn " " (head rest)
+

@@ -17,5 +17,5 @@ cabal-version:       >=1.8
 executable hvt
   main-is:           Hvt.hs
   -- other-modules:       
-  build-depends:     base==4.6.*,hmatrix,hmatrix-gsl-stats,plot>=0.2.2,cairo,pretty-show,bytestring,foldl,unix,split,data-binary-ieee754,binary>=0.7.1,iconv
-  ghc-options:       -Wall
+  build-depends:     base==4.6.*,hmatrix,hmatrix-gsl-stats,plot>=0.2.2,cairo,pretty-show,bytestring,foldl,unix,split,data-binary-ieee754,binary>=0.7.1,iconv,monad-par,parallel,parsec
+  ghc-options:       -Wall -O2 -rtsopts -threaded
