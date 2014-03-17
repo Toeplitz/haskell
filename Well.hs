@@ -3,7 +3,6 @@
 --
 
 module Well where
---import Control.Monad
 import Text.ParserCombinators.Parsec
 
 data Well = Well { wellX    :: Float
@@ -14,6 +13,8 @@ data Well = Well { wellX    :: Float
                  , wellName :: String
 } deriving Show
 
+getWellX :: [Well] -> String -> [Well]
+getWellX xs name = filter (\x -> wellName x == name) xs
 
 plainValue :: Parser String
 plainValue = many (noneOf " \n")
@@ -40,7 +41,8 @@ wellLine = do
   name <- quotedValue
   return $ Well (read x) (read y) (read z) (read twt) (read md) name
 
-wellParse :: String -> IO ()
-wellParse input = case parse wellLine "(test)" input of
-            Left err  -> print err
-            Right res -> print res
+--wellParse :: String -> IO ()
+wellParse = undefined
+--wellParse input = case parse wellLine "(test)" input of
+ --           Left err  -> []
+ --           Right res -> res

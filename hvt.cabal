@@ -19,3 +19,11 @@ executable hvt
   -- other-modules:       
   build-depends:     base==4.6.*,hmatrix,hmatrix-gsl-stats,plot>=0.2.2,cairo,pretty-show,bytestring,foldl,unix,split,data-binary-ieee754,binary>=0.7.1,iconv,monad-par,parallel,parsec
   ghc-options:       -Wall -O2 -rtsopts -threaded
+
+executable hvtPipes
+  main-is:           HvtPipes.hs
+  -- other-modules:       
+  build-depends:     base==4.6.*,pipes
+  build-depends:
+  base==4.6.*,hmatrix,hmatrix-gsl-stats,plot>=0.2.2,cairo,pretty-show,bytestring,foldl,unix,split,data-binary-ieee754,binary>=0.7.1,iconv,monad-par,parallel,parsec,pipes
+  ghc-options:       -Wall -O2 -rtsopts -threaded

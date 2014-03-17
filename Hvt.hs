@@ -7,7 +7,6 @@
 import Figure
 import Well
 
-import Control.Applicative
 import Control.Monad
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.List.Split
@@ -17,7 +16,6 @@ import System.Environment
 
 import qualified Data.Binary.Get as G
 import qualified Data.ByteString.Lazy.Internal as BLI
-import qualified Text.ParserCombinators.Parsec as P
 
 import Segy
 
@@ -109,8 +107,7 @@ runActions opts rest output = do
       str          = fromJust $ optPlotInline opts
 
 parseFile :: Options -> BLI.ByteString -> IO ()
-parseFile opts stream = do
-  case G.runGetOrFail getSEGY stream of 
+parseFile opts stream = case G.runGetOrFail getSEGY stream of 
     Left  (_, _, _) -> error "Read failed, exiting!"
     Right (lbs, _, res) -> runActions opts lbs res
 
@@ -126,7 +123,10 @@ main = do
   xs <- readFile "data/well_24_9_1_checkshot_ascii.txt"
   let (_,rest) = splitAt 17 $ lines xs
     
-  wells <- mapM_ wellParse rest
+  let wells = fmap wellParse rest
+  let x = getWellX wells "24_9_1"
+  return ()
+
 
   --print $ fmap (splitOn " ") (rest)
   --print $ splitOn " " (head rest)
